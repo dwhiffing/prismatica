@@ -2,243 +2,409 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Lathe Model Editor</title>
+<title>Entity / Spline Editor</title>
 <style>
   :root { color-scheme: dark; }
   html, body { margin: 0; height: 100%; background: #0a0e12; color: #9fb; font: 13px/1.5 monospace; }
-  #wrap { display: grid; grid-template-columns: 340px 1fr; grid-template-rows: 1fr auto; height: 100vh; }
-  #profile { grid-row: 1; border-right: 1px solid #1c2a33; position: relative; }
-  #view { grid-row: 1; grid-column: 2; position: relative; }
-  #out { grid-column: 1 / 3; grid-row: 2; border-top: 1px solid #1c2a33; padding: 8px 10px; background: #0d141a; }
+  #wrap { display: grid; grid-template-columns: 300px 300px 1fr; grid-template-rows: 1fr auto; height: 100vh; }
+  #panel { grid-row: 1; border-right: 1px solid #1c2a33; overflow-y: auto; padding: 8px; }
+  #profile { grid-row: 1; grid-column: 2; border-right: 1px solid #1c2a33; position: relative; }
+  #view { grid-row: 1; grid-column: 3; position: relative; }
+  #out { grid-column: 1 / 4; grid-row: 2; border-top: 1px solid #1c2a33; padding: 8px 10px; background: #0d141a; max-height: 30vh; overflow: auto; }
   canvas { display: block; width: 100%; height: 100%; }
-  .bar { position: absolute; top: 0; left: 0; right: 0; padding: 6px 8px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; user-select: none; }
+  .bar { padding: 4px 0; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; user-select: none; }
+  #view .bar, #profile .bar { position: absolute; top: 0; left: 0; right: 0; padding: 6px 8px; z-index: 2; }
   #view .bar { justify-content: flex-end; }
-  button, select { background: #16222c; color: #9fb; border: 1px solid #2c4; border-radius: 3px; padding: 3px 8px; cursor: pointer; font: inherit; }
+  button, select, input[type=color] { background: #16222c; color: #9fb; border: 1px solid #2c4; border-radius: 3px; padding: 3px 6px; cursor: pointer; font: inherit; }
   button:hover { background: #1d3040; }
   button.a { background: #2c4; color: #000; }
   label { display: inline-flex; gap: 4px; align-items: center; }
-  input[type=range] { width: 90px; }
+  input[type=range] { width: 110px; }
+  input[type=number] { width: 52px; background: #16222c; color: #9fb; border: 1px solid #223; border-radius: 3px; font: inherit; }
+  #splines .row { display: flex; align-items: center; gap: 4px; padding: 2px; border-radius: 3px; cursor: pointer; }
+  #splines .row.a { background: #16323f; }
+  #splines .sw { width: 12px; height: 12px; border-radius: 2px; border: 1px solid #0006; }
+  h4 { margin: 10px 0 4px; color: #7ea; border-bottom: 1px solid #1c2a33; padding-bottom: 2px; }
+  .grid3 { display: grid; grid-template-columns: auto 1fr; gap: 3px 6px; align-items: center; }
   #hint { position: absolute; bottom: 6px; left: 8px; color: #567; font-size: 11px; }
-  #snippet { color: #cfe; white-space: pre-wrap; word-break: break-all; margin: 6px 0 0; user-select: all; }
-  #copy { float: right; }
-  b.k { color: #fd4; }
+  #snippet { color: #cfe; white-space: pre; margin: 6px 0 0; user-select: all; font-size: 11px; }
+  small { color: #567; }
 </style>
 </head>
 <body>
 <div id="wrap">
+  <div id="panel">
+    <div class="bar">
+      <label>entity
+        <select id="entity"></select>
+      </label>
+      <button id="reload" title="re-read src/models.ts from disk">↻ reload</button>
+    </div>
+    <h4>splines <button id="addSpline" style="float:right">+ add</button></h4>
+    <div id="splines"></div>
+    <div id="splineProps"></div>
+  </div>
+
   <div id="profile">
     <div class="bar">
-      <label>model
-        <select id="model"></select>
-      </label>
-      <button id="add">+ point</button>
-      <button id="del">– point</button>
+      <small id="profLabel">profile</small>
+      <button id="addPt">+ pt</button>
+      <button id="delPt">– pt</button>
       <label>seg <input type="range" id="seg" min="3" max="24" value="8"><span id="segv">8</span></label>
     </div>
     <canvas id="pc"></canvas>
-    <div id="hint">drag points · click empty space near the curve to insert · shift-click a point to delete</div>
+    <div id="hint">drag pts · click curve to insert · shift-click to delete</div>
   </div>
+
   <div id="view">
     <div class="bar">
-      <label><input type="checkbox" id="wire"> wireframe</label>
+      <label><input type="checkbox" id="wire"> wire</label>
       <button id="reset3d">reset view</button>
     </div>
     <canvas id="vc"></canvas>
   </div>
+
   <div id="out">
-    <button id="copy">copy snippet</button>
-    <div><b class="k" id="curname">S</b>: current model — paste over the matching line in <b class="k">MODELS</b></div>
+    <button id="download">⤓ download models.ts</button>
+    <button id="copy">copy</button>
+    <small> — replaces src/models.ts wholesale</small>
+    <small id="loadWarn" style="color:#fb6"></small>
     <div id="snippet"></div>
   </div>
 </div>
 <script>
-// ------- seed models (kept in sync with src/game.ts MODELS) -------
-const MODELS = {
-  S: { p: [[0,0],[10,0],[11,4],[8,9],[4,13],[0,15]], seg: 10, name: 'solar dome' },
-  L: { p: [[0,0],[3,0],[4,3],[3,12],[5,14],[0,15]], seg: 6, name: 'link pylon' },
-  M: { p: [[0,0],[9,0],[9,5],[5,7],[3,9],[2,16],[0,18]], seg: 8, name: 'miner drill' },
-  T: { p: [[0,0],[8,0],[8,6],[5,8],[5,18],[3,19],[3,22],[0,22]], seg: 8, name: 'tower barrel' },
-  N: { p: [[0,0],[6,3],[9,7],[5,11],[0,16]], seg: 5, name: 'crystal' },
-  E: { p: [[0,0],[7,4],[8,8],[5,12],[0,14]], seg: 7, name: 'enemy blob' },
+// ============ data model (mirrors src/models.ts) ============
+// each spline: {geo:{profile:[[r,h]],seg}, mat:{col,amb,dif}, off:[x,y,z], rot:[x,y,z], scl}
+function sp(profile,seg,col,off=[0,0,0],rot=[0,0,0],scl=1,amb=0.3,dif=0.59){
+  return { geo:{profile,seg}, mat:{col,amb,dif}, off:off.slice(), rot:rot.slice(), scl };
+}
+// Embedded fallback (used only if src/models.ts can't be fetched, e.g. opened
+// directly via file:// with fetch blocked). The real source of truth is models.ts,
+// loaded by loadModels() below.
+let COL = { S:'#fd4', L:'#4cf', M:'#4f8', T:'#f66', N:'#c9f', E:'#f2a' };
+let ENTITIES = {
+  S:{name:'solar',splines:[ sp([[0,0],[10,0],[11,4],[8,9],[4,13],[0,15]],10,'#fd4') ]},
+  L:{name:'link', splines:[ sp([[0,0],[3,0],[4,3],[3,12],[5,14],[0,15]],6,'#4cf') ]},
+  M:{name:'miner',splines:[ sp([[0,0],[9,0],[9,5],[5,7],[3,9],[2,16],[0,18]],8,'#4f8') ]},
+  T:{name:'tower',splines:[ sp([[0,0],[8,0],[8,6],[5,8],[5,18],[3,19],[3,22],[0,22]],8,'#f66') ]},
+  N:{name:'crystal',splines:[
+    sp([[0,0],[3.5,0],[4.5,14.5],[0,21]],5,'#c9f',[0,0,0],[0,0,0],1),
+    sp([[0,0],[3.5,0],[4.5,14.5],[0,21]],5,'#b7f',[-3,0,3],[0,0.9,0],0.65),
+    sp([[0,0],[3.5,0],[4.5,14.5],[0,21]],5,'#a6e',[3,0,-4],[0,-1.9,0],0.5),
+  ]},
+  E:{name:'enemy',splines:[ sp([[0,0],[7,4],[8,8],[5,12],[0,14]],7,'#f2a') ]},
 };
-const COL = { S:'#fd4', L:'#4cf', M:'#4f8', T:'#f66', N:'#c9f', E:'#f2a' };
-let cur = 'S';
 
-// ------- lathe (same algorithm as the game) -------
-function lathe(profile, seg) {
-  const verts = [];
-  for (let i = 0; i < seg; i++) {
-    const a = i / seg * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a);
-    for (const [r, h] of profile) verts.push([r * ca, h, r * sa]);
-  }
-  const faces = [], P = profile.length;
-  for (let i = 0; i < seg; i++) {
-    const ni = (i + 1) % seg;
-    for (let j = 0; j < P - 1; j++) faces.push([i*P+j, ni*P+j, ni*P+j+1, i*P+j+1]);
-  }
-  return { verts, faces };
+// Load the real data from src/models.ts. We extract the `COL = {...}` and
+// `ENTITIES = {...}` object literals and eval them with `sp` in scope — the
+// literals contain only sp() calls + JSON-ish data, so this is safe & exact.
+function objLiteralAfter(src, marker){
+  const at = src.indexOf(marker); if (at < 0) return null;
+  let i = src.indexOf('{', at); if (i < 0) return null;
+  let depth = 0, start = i;
+  for (; i < src.length; i++){ const c = src[i];
+    if (c === '{') depth++; else if (c === '}'){ depth--; if (depth === 0){ return src.slice(start, i+1); } } }
+  return null;
 }
-
-// ================= PROFILE EDITOR (left) =================
-const pc = document.getElementById('pc'), px = pc.getContext('2d');
-// profile space: radius (x, 0..R_MAX) horizontal, height (y, 0..H_MAX) vertical (up)
-let PAD = 40, PPU = 8; // pixels per unit
-let drag = -1;
-
-function fitPPU() { // scale so the tallest/widest point of the current model fills the panel
-  const P = MODELS[cur].p; let mx = 1;
-  for (const [r,h] of P) mx = Math.max(mx, r, h);
-  const availH = pc.clientHeight - PAD - 20, availW = pc.clientWidth - PAD - 20;
-  PPU = Math.max(4, Math.min(availH, availW) / (mx * 1.15));
+async function loadModels(){
+  try {
+    // cache-bust with a timestamp so we always read the file on disk, never a cached copy
+    const res = await fetch('../src/models.ts?t=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP '+res.status);
+    const txt = await res.text();
+    const colSrc = objLiteralAfter(txt, 'const COL');
+    const entSrc = objLiteralAfter(txt, 'const ENTITIES');
+    if (!colSrc || !entSrc) throw new Error('could not locate COL/ENTITIES');
+    // shared profile consts (e.g. CRY) referenced inside ENTITIES — hoist them so
+    // the eval can resolve those identifiers. Match `const NAME = [ ... ]` (array).
+    let consts = '';
+    for (const m of txt.matchAll(/const\s+([A-Z][A-Z0-9_]*)\s*(?::[^=]+)?=\s*(\[[\s\S]*?\])\s*\n/g))
+      if (m[1] !== 'COL' && m[1] !== 'ENTITIES') consts += 'const ' + m[1] + '=' + m[2] + ';';
+    // eval with sp in scope; the literals are plain data + sp() calls
+    const load = new Function('sp', consts + 'return { COL: (' + colSrc + '), ENTITIES: (' + entSrc + ') };');
+    const data = load(sp);
+    COL = data.COL; ENTITIES = data.ENTITIES;
+    const nspl = Object.values(ENTITIES).reduce((a, e) => a + e.splines.length, 0);
+    document.getElementById('loadWarn').style.color = '#7ea';
+    document.getElementById('loadWarn').textContent = '✓ loaded src/models.ts (' + nspl + ' splines)';
+    return true;
+  } catch (e) {
+    console.warn('model-editor: using embedded fallback —', e.message);
+    document.getElementById('loadWarn').style.color = '#fb6';
+    document.getElementById('loadWarn').textContent = '⚠ using EMBEDDED copy — could not read src/models.ts (' + e.message + '). Open via a server, not file://';
+    return false;
+  }
 }
-function pcResize() { pc.width = pc.clientWidth * devicePixelRatio; pc.height = pc.clientHeight * devicePixelRatio; px.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0); fitPPU(); drawProfile(); }
-// map profile (r,h) -> canvas px. height grows upward from a baseline near bottom.
-function p2c(r, h) { return [PAD + r * PPU, pc.clientHeight - PAD - h * PPU]; }
-function c2p(cx, cy) { return [(cx - PAD) / PPU, (pc.clientHeight - PAD - cy) / PPU]; }
+let cur = 'S';   // current entity key
+let si = 0;      // selected spline index
+const ent = () => ENTITIES[cur];
+const spl = () => ent().splines[si];
 
-function drawProfile() {
-  const w = pc.clientWidth, hgt = pc.clientHeight;
-  px.clearRect(0,0,w,hgt);
-  // axes
-  px.strokeStyle = '#1c2a33'; px.lineWidth = 1;
+// ============ shared geometry (mirrors game.ts) ============
+function lathe(profile, seg){
+  const verts=[];
+  for(let i=0;i<seg;i++){ const a=i/seg*Math.PI*2,ca=Math.cos(a),sa=Math.sin(a);
+    for(const [r,h] of profile) verts.push([r*ca,h,r*sa]); }
+  const faces=[],P=profile.length;
+  for(let i=0;i<seg;i++){ const ni=(i+1)%seg;
+    for(let j=0;j<P-1;j++) faces.push([i*P+j,ni*P+j,ni*P+j+1,i*P+j+1]); }
+  return {verts,faces};
+}
+function rotate(v,r){ let[x,y,z]=v;
+  let c=Math.cos(r[0]),s=Math.sin(r[0]); [y,z]=[y*c-z*s,y*s+z*c];
+  c=Math.cos(r[1]);s=Math.sin(r[1]); [x,z]=[x*c+z*s,-x*s+z*c];
+  c=Math.cos(r[2]);s=Math.sin(r[2]); [x,y]=[x*c-y*s,x*s+y*c];
+  return [x,y,z]; }
+function norm(v){const l=Math.hypot(v[0],v[1],v[2])||1;return[v[0]/l,v[1]/l,v[2]/l];}
+function tint(hex,f){ let r,g,b; if(hex.length===4){r=parseInt(hex[1],16)*17;g=parseInt(hex[2],16)*17;b=parseInt(hex[3],16)*17;}
+  else{r=parseInt(hex.slice(1,3),16);g=parseInt(hex.slice(3,5),16);b=parseInt(hex.slice(5,7),16);}
+  const c=n=>Math.min(255,n*f)|0; return `rgb(${c(r)},${c(g)},${c(b)})`; }
+const LIGHT = norm([-1,-1,1]);
+
+// ============ PROFILE EDITOR (middle) ============
+const pc=document.getElementById('pc'), px=pc.getContext('2d');
+let PAD=40, PPU=8, drag=-1;
+// profile axes are LOCKED to a fixed 0..RMAX (radius) / 0..HMAX (height) range so the
+// plot never rescales while you drag — dragging a point no longer makes the whole grid
+// shrink/grow under the cursor. Values are clamped to these bounds instead of growing it.
+const RMAX=24, HMAX=40;
+function fitPPU(){
+  const availH=pc.clientHeight-PAD-20, availW=pc.clientWidth-PAD-20;
+  PPU=Math.max(4, Math.min(availH/HMAX, availW/RMAX)); }
+function pcResize(){ pc.width=pc.clientWidth*devicePixelRatio; pc.height=pc.clientHeight*devicePixelRatio; px.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0); fitPPU(); drawProfile(); }
+function p2c(r,h){ return [PAD+r*PPU, pc.clientHeight-PAD-h*PPU]; }
+function c2p(cx,cy){ return [(cx-PAD)/PPU, (pc.clientHeight-PAD-cy)/PPU]; }
+function drawProfile(){
+  const w=pc.clientWidth,hgt=pc.clientHeight; px.clearRect(0,0,w,hgt);
+  px.strokeStyle='#1c2a33'; px.lineWidth=1;
   px.beginPath(); px.moveTo(PAD,10); px.lineTo(PAD,hgt-PAD); px.lineTo(w-10,hgt-PAD); px.stroke();
-  px.fillStyle = '#456'; px.fillText('radius →', w-70, hgt-PAD+16); px.save();
-  px.translate(14, 60); px.rotate(-Math.PI/2); px.fillText('height →', 0, 0); px.restore();
-  // grid ticks every 5 units
-  px.strokeStyle = '#121b22';
-  for (let u=5; u<40; u+=5){ const [gx]=p2c(u,0); px.beginPath();px.moveTo(gx,10);px.lineTo(gx,hgt-PAD);px.stroke();
-    const [,gy]=p2c(0,u); px.beginPath();px.moveTo(PAD,gy);px.lineTo(w-10,gy);px.stroke(); }
-  const P = MODELS[cur].p;
-  // mirror curve (show the lathe silhouette) faint on -radius side
-  px.strokeStyle = '#243'; px.beginPath();
-  P.forEach(([r,h],i)=>{ const [x,y]=p2c(-r,h); i?px.lineTo(x,y):px.moveTo(x,y); }); px.stroke();
-  // profile line
-  px.strokeStyle = COL[cur]; px.lineWidth = 2; px.beginPath();
-  P.forEach(([r,h],i)=>{ const [x,y]=p2c(r,h); i?px.lineTo(x,y):px.moveTo(x,y); }); px.stroke();
-  // points
-  P.forEach(([r,h],i)=>{ const [x,y]=p2c(r,h);
-    px.fillStyle = i===drag ? '#fff' : COL[cur];
-    px.beginPath(); px.arc(x,y,5,0,7); px.fill();
-    px.fillStyle='#567'; px.fillText(`${r},${h}`, x+8, y-6);
-  });
+  px.strokeStyle='#121b22';
+  for(let u=5;u<40;u+=5){ const[gx]=p2c(u,0); px.beginPath();px.moveTo(gx,10);px.lineTo(gx,hgt-PAD);px.stroke();
+    const[,gy]=p2c(0,u); px.beginPath();px.moveTo(PAD,gy);px.lineTo(w-10,gy);px.stroke(); }
+  const P=spl().geo.profile, col=spl().mat.col;
+  px.strokeStyle='#243'; px.beginPath();
+  P.forEach(([r,h],i)=>{const[x,y]=p2c(-r,h); i?px.lineTo(x,y):px.moveTo(x,y);}); px.stroke();
+  px.strokeStyle=col; px.lineWidth=2; px.beginPath();
+  P.forEach(([r,h],i)=>{const[x,y]=p2c(r,h); i?px.lineTo(x,y):px.moveTo(x,y);}); px.stroke();
+  P.forEach(([r,h],i)=>{const[x,y]=p2c(r,h);
+    px.fillStyle=i===drag?'#fff':col; px.beginPath();px.arc(x,y,5,0,7);px.fill();
+    px.fillStyle='#567'; px.fillText(`${r},${h}`,x+8,y-6); });
 }
-
-function nearestPoint(cx, cy) {
-  const P = MODELS[cur].p; let best=-1, bd=12*12;
-  P.forEach(([r,h],i)=>{ const [x,y]=p2c(r,h); const d=(x-cx)**2+(y-cy)**2; if(d<bd){bd=d;best=i;} });
-  return best;
-}
-pc.addEventListener('pointerdown', e => {
-  const b = pc.getBoundingClientRect(), cx=e.clientX-b.left, cy=e.clientY-b.top;
-  const i = nearestPoint(cx, cy);
-  if (i>=0 && e.shiftKey) { if (MODELS[cur].p.length>2){ MODELS[cur].p.splice(i,1); refresh(); } return; }
-  if (i>=0) { drag=i; pc.setPointerCapture(e.pointerId); drawProfile(); return; }
-  // insert a point at click, into the segment whose midpoint is closest
-  const P = MODELS[cur].p; let seg=0, bd=1e9;
-  for (let k=0;k<P.length-1;k++){ const [ax,ay]=p2c(...P[k]),[bx,by]=p2c(...P[k+1]); const mx=(ax+bx)/2,my=(ay+by)/2; const d=(mx-cx)**2+(my-cy)**2; if(d<bd){bd=d;seg=k;} }
-  let [r,h]=c2p(cx,cy); r=Math.max(0,Math.round(r)); h=Math.round(h);
-  P.splice(seg+1,0,[r,h]); refresh();
+function nearestPoint(cx,cy){ const P=spl().geo.profile; let best=-1,bd=144;
+  P.forEach(([r,h],i)=>{const[x,y]=p2c(r,h);const d=(x-cx)**2+(y-cy)**2;if(d<bd){bd=d;best=i;}}); return best; }
+pc.addEventListener('pointerdown',e=>{
+  const b=pc.getBoundingClientRect(),cx=e.clientX-b.left,cy=e.clientY-b.top;
+  const i=nearestPoint(cx,cy); const P=spl().geo.profile;
+  if(i>=0&&e.shiftKey){ if(P.length>2){P.splice(i,1);refresh();} return; }
+  if(i>=0){ drag=i; pc.setPointerCapture(e.pointerId); drawProfile(); return; }
+  let seg=0,bd=1e9; for(let k=0;k<P.length-1;k++){const[ax,ay]=p2c(...P[k]),[bx,by]=p2c(...P[k+1]);const mx=(ax+bx)/2,my=(ay+by)/2;const d=(mx-cx)**2+(my-cy)**2;if(d<bd){bd=d;seg=k;}}
+  let[r,h]=c2p(cx,cy); r=Math.max(0,Math.round(r)); h=Math.round(h); P.splice(seg+1,0,[r,h]); refresh();
 });
-pc.addEventListener('pointermove', e => {
-  if (drag<0) return;
-  const b = pc.getBoundingClientRect();
-  let [r,h] = c2p(e.clientX-b.left, e.clientY-b.top);
-  r = Math.max(0, Math.round(r*2)/2); h = Math.round(h*2)/2; // snap to 0.5
-  MODELS[cur].p[drag] = [r, h]; refresh();
-});
-pc.addEventListener('pointerup', e => { drag=-1; pc.releasePointerCapture?.(e.pointerId); drawProfile(); updateSnippet(); });
+pc.addEventListener('pointermove',e=>{ if(drag<0)return; const b=pc.getBoundingClientRect();
+  let[r,h]=c2p(e.clientX-b.left,e.clientY-b.top);
+  r=Math.max(0,Math.min(RMAX,Math.round(r*2)/2)); h=Math.max(0,Math.min(HMAX,Math.round(h*2)/2));
+  spl().geo.profile[drag]=[r,h]; refresh(); });
+pc.addEventListener('pointerup',e=>{ drag=-1; pc.releasePointerCapture?.(e.pointerId); refresh(); });
 
-// ================= 3D PREVIEW (right, orbit) =================
-const vc = document.getElementById('vc'), vx = vc.getContext('2d');
-let yaw = 0.7, pitch = 0.5, zoom = 6, wire = false;
-function vcResize() { vc.width = vc.clientWidth*devicePixelRatio; vc.height = vc.clientHeight*devicePixelRatio; vx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0); }
-
-function rot(v) { // apply yaw (around y) then pitch (around x)
-  let [x,y,z] = v;
-  let cx=Math.cos(yaw), sx=Math.sin(yaw); [x,z]=[x*cx - z*sx, x*sx + z*cx];
-  let cp=Math.cos(pitch), sp=Math.sin(pitch); [y,z]=[y*cp - z*sp, y*sp + z*cp];
-  return [x,y,z];
-}
-const LIGHT = (()=>{ const v=[-0.4,1,0.6],l=Math.hypot(...v); return v.map(c=>c/l); })();
-function tint(hex,f){ let r,g,b; if(hex.length===4){r=parseInt(hex[1],16)*17;g=parseInt(hex[2],16)*17;b=parseInt(hex[3],16)*17;} else {r=parseInt(hex.slice(1,3),16);g=parseInt(hex.slice(3,5),16);b=parseInt(hex.slice(5,7),16);} const c=n=>Math.min(255,n*f)|0; return `rgb(${c(r)},${c(g)},${c(b)})`; }
-
-function drawView() {
-  const w = vc.clientWidth, hgt = vc.clientHeight;
-  vx.fillStyle = '#0a0e12'; vx.fillRect(0,0,w,hgt);
-  const m = lathe(MODELS[cur].p, +MODELS[cur].seg);
-  // center model vertically around its mid-height
-  let maxh = 0; for (const [,h] of MODELS[cur].p) maxh = Math.max(maxh,h);
-  const cy0 = maxh/2;
-  const proj = v => { const [x,y,z] = rot([v[0], v[1]-cy0, v[2]]); return [w/2 + x*zoom, hgt/2 - y*zoom, z]; };
+// ============ 3D ENTITY VIEW (right, orbit origin) ============
+const vc=document.getElementById('vc'), vx=vc.getContext('2d');
+let yaw=0.7, pitch=0.5, zoom=6, wire=false;
+function vcResize(){ vc.width=vc.clientWidth*devicePixelRatio; vc.height=vc.clientHeight*devicePixelRatio; vx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0); drawView(); }
+function orbit(v){ let[x,y,z]=v;
+  let c=Math.cos(yaw),s=Math.sin(yaw); [x,z]=[x*c-z*s,x*s+z*c];
+  c=Math.cos(pitch);s=Math.sin(pitch); [y,z]=[y*c-z*s,y*s+z*c]; return [x,y,z]; }
+function drawView(){
+  const w=vc.clientWidth,hgt=vc.clientHeight; vx.fillStyle='#0a0e12'; vx.fillRect(0,0,w,hgt);
+  // center entity around mid-height of its overall bounds
+  let maxh=0; for(const s of ent().splines) for(const[,h] of s.geo.profile) maxh=Math.max(maxh,(h+s.off[1])*s.scl);
+  const cy0=maxh/2;
+  const proj=v=>{ const[x,y,z]=orbit([v[0],v[1]-cy0,v[2]]); return [w/2+x*zoom,hgt/2-y*zoom,z]; };
   // ground grid
-  vx.strokeStyle = '#131c24';
-  for (let g=-20; g<=20; g+=5) {
-    const a = proj([g,0,-20]), b = proj([g,0,20]), c = proj([-20,0,g]), d = proj([20,0,g]);
-    vx.beginPath(); vx.moveTo(a[0],a[1]); vx.lineTo(b[0],b[1]); vx.moveTo(c[0],c[1]); vx.lineTo(d[0],d[1]); vx.stroke();
-  }
-  // faces with depth sort + flat shading
-  const base = COL[cur];
-  const flist = m.faces.map(f => {
-    const wv = f.map(i => m.verts[i]);
-    const pv = wv.map(proj);
-    const ax=wv[1][0]-wv[0][0],ay=wv[1][1]-wv[0][1],az=wv[1][2]-wv[0][2];
-    const bx=wv[2][0]-wv[0][0],by=wv[2][1]-wv[0][1],bz=wv[2][2]-wv[0][2];
-    let nx=ay*bz-az*by, ny=az*bx-ax*bz, nz=ax*by-ay*bx; const nl=Math.hypot(nx,ny,nz)||1; nx/=nl;ny/=nl;nz/=nl;
-    // rotate normal into view space for lighting consistency with camera
-    const rn = rot([nx,ny,nz]);
-    const dot = rn[0]*LIGHT[0]+rn[1]*LIGHT[1]+rn[2]*LIGHT[2];
-    const shade = tint(base, 0.4 + 0.6*Math.max(0,Math.abs(dot)));
-    const depth = (pv[0][2]+pv[1][2]+pv[2][2]+pv[3][2])/4;
-    return { pv, shade, depth };
+  vx.strokeStyle='#131c24';
+  for(let g=-20;g<=20;g+=5){ const a=proj([g,0,-20]),b=proj([g,0,20]),c=proj([-20,0,g]),d=proj([20,0,g]);
+    vx.beginPath();vx.moveTo(a[0],a[1]);vx.lineTo(b[0],b[1]);vx.moveTo(c[0],c[1]);vx.lineTo(d[0],d[1]);vx.stroke(); }
+  // origin gizmo (axes)
+  const O=proj([0,0,0]);
+  [['#f66',[6,0,0]],['#6f6',[0,6,0]],['#66f',[0,0,6]]].forEach(([c,p])=>{ const e=proj(p);
+    vx.strokeStyle=c; vx.beginPath(); vx.moveTo(O[0],O[1]); vx.lineTo(e[0],e[1]); vx.stroke(); });
+  // all splines -> faces, depth sorted together
+  const flist=[];
+  ent().splines.forEach((s,idx)=>{
+    const m=lathe(s.geo.profile,s.geo.seg);
+    const sel = idx===si;
+    for(const f of m.faces){
+      const wv=f.map(i=>{ const lv=rotate([m.verts[i][0]*s.scl,m.verts[i][1]*s.scl,m.verts[i][2]*s.scl],s.rot);
+        return [lv[0]+s.off[0],lv[1]+s.off[1],lv[2]+s.off[2]]; });
+      const pv=wv.map(proj);
+      const ax=wv[1][0]-wv[0][0],ay=wv[1][1]-wv[0][1],az=wv[1][2]-wv[0][2];
+      const bx=wv[2][0]-wv[0][0],by=wv[2][1]-wv[0][1],bz=wv[2][2]-wv[0][2];
+      let nx=ay*bz-az*by,ny=az*bx-ax*bz,nz=ax*by-ay*bx; const nl=Math.hypot(nx,ny,nz)||1; nx/=nl;ny/=nl;nz/=nl;
+      const rn=orbit([nx,ny,nz]); const dot=rn[0]*LIGHT[0]+rn[1]*LIGHT[1]+rn[2]*LIGHT[2];
+      const shade=tint(s.mat.col, s.mat.amb + s.mat.dif*Math.max(0,dot));
+      const depth=(pv[0][2]+pv[1][2]+pv[2][2]+pv[3][2])/4;
+      flist.push({pv,shade,depth,sel});
+    }
   });
   flist.sort((a,b)=>a.depth-b.depth);
-  for (const f of flist) {
-    vx.beginPath();
-    f.pv.forEach((p,i)=> i?vx.lineTo(p[0],p[1]):vx.moveTo(p[0],p[1]));
-    vx.closePath();
-    if (wire) { vx.strokeStyle = f.shade; vx.stroke(); }
-    else { vx.fillStyle = f.shade; vx.fill(); vx.strokeStyle='rgba(0,0,0,.25)'; vx.stroke(); }
+  for(const f of flist){ vx.beginPath(); f.pv.forEach((p,i)=>i?vx.lineTo(p[0],p[1]):vx.moveTo(p[0],p[1])); vx.closePath();
+    if(wire){ vx.strokeStyle=f.shade; vx.stroke(); }
+    else { vx.fillStyle=f.shade; vx.fill();
+      vx.strokeStyle=f.sel?'#fff':'rgba(0,0,0,.25)'; vx.lineWidth=f.sel?1.2:1; vx.stroke(); vx.lineWidth=1; } }
+}
+let odrag=false,ox=0,oy=0;
+vc.addEventListener('pointerdown',e=>{odrag=true;ox=e.clientX;oy=e.clientY;vc.setPointerCapture(e.pointerId);});
+vc.addEventListener('pointermove',e=>{if(!odrag)return;yaw+=(e.clientX-ox)*0.01;pitch+=(e.clientY-oy)*0.01;pitch=Math.max(-1.5,Math.min(1.5,pitch));ox=e.clientX;oy=e.clientY;drawView();});
+vc.addEventListener('pointerup',e=>{odrag=false;vc.releasePointerCapture?.(e.pointerId);});
+vc.addEventListener('wheel',e=>{e.preventDefault();zoom=Math.max(2,Math.min(30,zoom*(e.deltaY<0?1.1:1/1.1)));drawView();});
+
+// ============ SPLINE LIST + PROPS (left) ============
+function drawSplineList(){
+  const box=document.getElementById('splines'); box.innerHTML='';
+  ent().splines.forEach((s,i)=>{
+    const row=document.createElement('div'); row.className='row'+(i===si?' a':'');
+    row.innerHTML=`<span class="sw" style="background:${s.mat.col}"></span>spline ${i}`;
+    const del=document.createElement('button'); del.textContent='×'; del.title='delete'; del.style.marginLeft='auto';
+    del.onclick=ev=>{ ev.stopPropagation(); if(ent().splines.length>1){ ent().splines.splice(i,1); si=Math.max(0,si-(i<=si?1:0)); refresh(); } };
+    row.onclick=()=>{ si=i; refresh(); };
+    row.appendChild(del); box.appendChild(row);
+  });
+}
+function num(val,step,cb){ const n=document.createElement('input'); n.type='number'; n.value=val; n.step=step;
+  n.oninput=()=>{ cb(parseFloat(n.value)||0); }; return n; }
+function drawSplineProps(){
+  const s=spl(), box=document.getElementById('splineProps'); box.innerHTML='';
+  const h=(t)=>{const e=document.createElement('h4');e.textContent=t;box.appendChild(e);return e;};
+  // material
+  h('material');
+  const mg=document.createElement('div'); mg.className='grid3';
+  const col=document.createElement('input'); col.type='color'; col.value=hex6(s.mat.col); col.oninput=()=>{ s.mat.col=col.value; refresh(); };
+  mg.append(lbl('color'),col);
+  mg.append(lbl('ambient'),range(s.mat.amb,0,1,0.01,v=>{s.mat.amb=v;drawView();}));
+  mg.append(lbl('diffuse'),range(s.mat.dif,0,1,0.01,v=>{s.mat.dif=v;drawView();}));
+  box.appendChild(mg);
+  // transform
+  h('transform');
+  const tg=document.createElement('div'); tg.className='grid3';
+  tg.append(lbl('offset'), vecRow(s.off,0.5,()=>drawView()));
+  tg.append(lbl('rot(rad)'), vecRow(s.rot,0.1,()=>drawView()));
+  tg.append(lbl('scale'), num(s.scl,0.05,v=>{s.scl=v;drawView();}));
+  box.appendChild(tg);
+}
+function lbl(t){const e=document.createElement('span');e.textContent=t;return e;}
+function range(v,min,max,step,cb){ const wrap=document.createElement('span'); const r=document.createElement('input');
+  r.type='range';r.min=min;r.max=max;r.step=step;r.value=v; const o=document.createElement('span'); o.textContent=(+v).toFixed(2); o.style.marginLeft='4px';
+  r.oninput=()=>{o.textContent=(+r.value).toFixed(2);cb(parseFloat(r.value));}; wrap.append(r,o); return wrap; }
+function vecRow(arr,step,cb){ const w=document.createElement('span');
+  [0,1,2].forEach(k=>{ w.appendChild(num(arr[k],step,v=>{arr[k]=v;cb();})); }); return w; }
+function hex6(h){ if(h.length===4) return '#'+h[1]+h[1]+h[2]+h[2]+h[3]+h[3]; return h; }
+
+// ============ export ============
+function fmtV(v){ return '['+v.map(n=>+n.toFixed(3)).join(', ')+']'; }
+function fmtProfile(p){ return '['+p.map(([r,h])=>`[${r}, ${h}]`).join(', ')+']'; }
+function fmtSpline(s){
+  return `    sp(${fmtProfile(s.geo.profile)}, ${s.geo.seg}, '${s.mat.col}', ${fmtV(s.off)}, ${fmtV(s.rot)}, ${+s.scl.toFixed(3)}, ${+s.mat.amb.toFixed(3)}, ${+s.mat.dif.toFixed(3)}),`;
+}
+function exportFile(){
+  const keys = Object.keys(ENTITIES);
+  const etype = keys.map(k=>`'${k}'`).join(' | ');
+  const colLine = keys.map(k=>`${k}: '${COL[k]}'`).join(', ');
+  const head =
+`// ============================================================
+//  Entities & Splines — model data for the game.
+//  This whole file is round-tripped by tools/model-editor.html.
+//  An Entity is composed of 1+ Splines. Each Spline has geometry
+//  (a lathe profile) + a material, placed by offset/rotation/scale.
+// ============================================================
+export type V3 = [number, number, number]
+export type EType = ${etype}
+
+export interface Geo { profile: [number, number][]; seg: number }
+export interface Material { col: string; amb: number; dif: number }
+export interface Spline {
+  geo: Geo
+  mat: Material
+  off: V3
+  rot: V3
+  scl: number
+}
+export interface Entity { name: string; splines: Spline[] }
+
+export const COL: Record<EType, string> = {
+  ${colLine},
+}
+
+const sp = (
+  profile: [number, number][], seg: number, col: string,
+  off: V3 = [0, 0, 0], rot: V3 = [0, 0, 0], scl = 1, amb = 0.3, dif = 0.59,
+): Spline => ({ geo: { profile, seg }, mat: { col, amb, dif }, off, rot, scl })
+
+export const ENTITIES: Record<EType, Entity> = {
+`;
+  let body='';
+  for(const k in ENTITIES){
+    const e=ENTITIES[k];
+    body += `  ${k}: { name: '${e.name}', splines: [\n`;
+    for(const s of e.splines) body += fmtSpline(s)+'\n';
+    body += `  ] },\n`;
   }
-  // vertices as dots
-  vx.fillStyle = '#fff';
-  for (const v of m.verts) { const p = proj(v); vx.beginPath(); vx.arc(p[0],p[1],1.5,0,7); vx.fill(); }
+  return head + body + '}\n';
 }
-
-// orbit + zoom controls
-let odrag=false, ox=0, oy=0;
-vc.addEventListener('pointerdown', e=>{ odrag=true; ox=e.clientX; oy=e.clientY; vc.setPointerCapture(e.pointerId); });
-vc.addEventListener('pointermove', e=>{ if(!odrag)return; yaw += (e.clientX-ox)*0.01; pitch += (e.clientY-oy)*0.01; pitch=Math.max(-1.5,Math.min(1.5,pitch)); ox=e.clientX; oy=e.clientY; drawView(); });
-vc.addEventListener('pointerup', e=>{ odrag=false; vc.releasePointerCapture?.(e.pointerId); });
-vc.addEventListener('wheel', e=>{ e.preventDefault(); zoom=Math.max(2,Math.min(30, zoom*(e.deltaY<0?1.1:1/1.1))); drawView(); });
-
-// ================= UI wiring =================
-const modelSel = document.getElementById('model');
-for (const k in MODELS) { const o=document.createElement('option'); o.value=k; o.textContent=`${k} — ${MODELS[k].name}`; modelSel.appendChild(o); }
-modelSel.onchange = () => { cur = modelSel.value; syncSeg(); fitPPU(); refresh(); };
-const segEl = document.getElementById('seg'), segv = document.getElementById('segv');
-function syncSeg(){ segEl.value = MODELS[cur].seg; segv.textContent = MODELS[cur].seg; }
-segEl.oninput = () => { MODELS[cur].seg = +segEl.value; segv.textContent = segEl.value; refresh(); };
-document.getElementById('add').onclick = () => { const P=MODELS[cur].p; const [r,h]=P[P.length-1]; P.push([r,h+2]); refresh(); };
-document.getElementById('del').onclick = () => { if(MODELS[cur].p.length>2){ MODELS[cur].p.pop(); refresh(); } };
-document.getElementById('wire').onchange = e => { wire = e.target.checked; drawView(); };
-document.getElementById('reset3d').onclick = () => { yaw=0.7; pitch=0.5; zoom=6; drawView(); };
-document.getElementById('curname').textContent = cur;
-
-function updateSnippet() {
-  const P = MODELS[cur].p.map(([r,h]) => `[${r},${h}]`).join(',');
-  const line = `  ${cur}: lathe([${P}], ${MODELS[cur].seg}),`;
-  document.getElementById('snippet').textContent = line;
-  document.getElementById('curname').textContent = cur;
-}
-document.getElementById('copy').onclick = () => {
-  navigator.clipboard.writeText(document.getElementById('snippet').textContent.trim());
-  const b=document.getElementById('copy'); b.textContent='copied!'; setTimeout(()=>b.textContent='copy snippet',900);
+function updateExport(){ document.getElementById('snippet').textContent = exportFile(); }
+document.getElementById('download').onclick=()=>{
+  const blob=new Blob([exportFile()],{type:'text/plain'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='models.ts'; a.click();
 };
+document.getElementById('copy').onclick=()=>{ navigator.clipboard.writeText(exportFile());
+  const b=document.getElementById('copy'); b.textContent='copied!'; setTimeout(()=>b.textContent='copy',900); };
 
-function refresh() { drawProfile(); drawView(); updateSnippet(); }
-function resizeAll() { pcResize(); vcResize(); drawView(); }
-addEventListener('resize', resizeAll);
-syncSeg(); resizeAll(); refresh();
+// cmd+s / ctrl+s: POST the generated file to the editor server, which writes src/models.ts
+async function save(){
+  const warn=document.getElementById('loadWarn');
+  try{
+    const res=await fetch('/save',{method:'POST',headers:{'Content-Type':'text/plain'},body:exportFile()});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    warn.style.color='#7ea'; warn.textContent='✓ saved src/models.ts @ '+new Date().toLocaleTimeString();
+  }catch(e){
+    warn.style.color='#fb6';
+    warn.textContent='⚠ save failed ('+e.message+') — run `npm run editor` and open via http://localhost:4200';
+  }
+}
+addEventListener('keydown',e=>{
+  if((e.metaKey||e.ctrlKey)&&e.key==='s'){ e.preventDefault(); save(); }
+});
+
+// ============ UI wiring ============
+const entSel=document.getElementById('entity');
+function fillEntitySelect(){ entSel.innerHTML='';
+  for(const k in ENTITIES){ const o=document.createElement('option'); o.value=k; o.textContent=`${k} — ${ENTITIES[k].name}`; entSel.appendChild(o); }
+  entSel.value=cur; }
+entSel.onchange=()=>{ cur=entSel.value; si=0; refresh(); };
+document.getElementById('addSpline').onclick=()=>{ const s=spl(); ent().splines.push(sp(s.geo.profile.map(p=>p.slice()), s.geo.seg, s.mat.col, [0,0,0],[0,0,0],1,s.mat.amb,s.mat.dif)); si=ent().splines.length-1; refresh(); };
+const segEl=document.getElementById('seg'), segv=document.getElementById('segv');
+segEl.oninput=()=>{ spl().geo.seg=+segEl.value; segv.textContent=segEl.value; refresh(); };
+document.getElementById('addPt').onclick=()=>{ const P=spl().geo.profile; const[r,h]=P[P.length-1]; P.push([r,h+2]); refresh(); };
+document.getElementById('delPt').onclick=()=>{ const P=spl().geo.profile; if(P.length>2){P.pop();refresh();} };
+document.getElementById('wire').onchange=e=>{ wire=e.target.checked; drawView(); };
+document.getElementById('reset3d').onclick=()=>{ yaw=0.7;pitch=0.5;zoom=6; drawView(); };
+
+function syncSeg(){ segEl.value=spl().geo.seg; segv.textContent=spl().geo.seg;
+  document.getElementById('profLabel').textContent=`profile · spline ${si}`; }
+function refresh(){ syncSeg(); fitPPU(); drawProfile(); drawSplineList(); drawSplineProps(); drawView(); updateExport(); }
+function resizeAll(){ pcResize(); vcResize(); }
+addEventListener('resize',resizeAll);
+
+async function init(){
+  await loadModels();          // pull the real data from src/models.ts (or fall back)
+  cur = 'S'; si = 0;
+  fillEntitySelect();
+  resizeAll(); refresh();
+}
+document.getElementById('reload').onclick = async () => {
+  await loadModels();
+  si = 0; if (!ENTITIES[cur]) cur = 'S';
+  fillEntitySelect(); refresh();
+};
+init();
 </script>
 </body>
 </html>

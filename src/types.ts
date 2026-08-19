@@ -1,0 +1,53 @@
+// Shared types for the game. (V3 and EType live in models.ts and are re-exported
+// here so game code has a single import point for types.)
+import type { EType, V3 } from './models'
+export type { EType, V3 } from './models'
+
+// building types the player can place
+export type BType = 'S' | 'L' | 'M' | 'T'
+
+export interface Pt {
+  x: number
+  y: number
+}
+export interface Building extends Pt {
+  t: BType
+  e: number // stored energy
+  hp: number
+  cd: number // cooldown timer
+  bp?: number // build power remaining (>0 = under construction); undefined/0 = complete
+  fx?: Enemy | null // tower beam target
+  fxt?: number // tower beam fx timer
+  mn?: ResNode | null // miner: node being mined
+  mp?: number // miner: phase timer
+  sh?: number // miner: shots left on the current energy charge
+  res?: number // energy units in-flight toward this building (reserved, not yet arrived)
+  ni?: number // round-robin index for cycling through neighbors when relaying energy
+  route?: Building | null // forced relay target (set via 'z'); overrides round-robin
+  chain?: Building | null // tower: next tower in the laser chain (set via 'z')
+}
+export interface ResNode extends Pt {
+  amt: number // resources remaining
+  cap: number // full resource capacity (amt at spawn)
+  k: EType // which crystal model: 'N' (large), 'N2' (medium), 'N3' (small)
+  ds?: number // displayed scale 0..1, eases toward amt/cap (smooth shrink as depleted)
+}
+export interface Enemy extends Pt {
+  hp: number
+  target: Building | null
+}
+export interface Pulse {
+  x: number
+  y: number
+  tx: number
+  ty: number
+  p: number // 0..1 progress along the hop
+  delay: number // seconds before this hop starts (staggered chain)
+  len: number // world length of the hop (for constant-speed travel)
+  dst: Building // the node this pulse is arriving at (routed further, or consumed)
+  hb: number // hops-remaining budget (energy dissipates when it runs out)
+}
+
+// --- render types ---
+export type Face = { v: V3[]; c: string; d: number } // world verts, color, depth key
+export type Mesh = { faces: [number, number, number, number][]; verts: V3[] }

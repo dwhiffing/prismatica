@@ -6,6 +6,7 @@
   "scripts": {
     "check": "tsc --noEmit",
     "dev": "node dev.js",
+    "editor": "node editor.js",
     "build": "npm run check && node build.js"
   },
   "devDependencies": {

@@ -10,6 +10,9 @@ export async function bundle({ minify = true } = {}) {
     minify,
     format: 'iife',
     target: 'es2020',
+    // DEV is true only for the non-minified dev build; DEV-guarded code (e.g. exposing
+    // regen() to the Leva panel) is dead-code-eliminated from the minified release.
+    define: { DEV: String(!minify) },
     write: false,
   });
   const js = res.outputFiles[0].text.trim();
