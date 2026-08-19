@@ -1,5 +1,5 @@
 import { writeFileSync, mkdirSync } from 'fs';
-import { gzipSync } from 'zlib';
+import { gzipAsync } from '@gfx/zopfli';
 import { bundle } from './bundle.js';
 
 const LIMIT = 13 * 1024; // 13k = 13312 bytes
@@ -9,8 +9,8 @@ mkdirSync('dist', { recursive: true });
 const html = await bundle({ minify: true });
 writeFileSync('dist/index.html', html);
 
-// gzip
-const gz = gzipSync(Buffer.from(html), { level: 9 });
+// gzip via zopfli: same format as gzip -9, but a better encoder (~250 bytes smaller)
+const gz = Buffer.from(await gzipAsync(Buffer.from(html), { numiterations: 100 }));
 writeFileSync('dist/index.html.gz', gz);
 
 // report

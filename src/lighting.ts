@@ -42,7 +42,7 @@ export function shade(base: string, n: V3, amb: number, dif: number): string {
 }
 
 // scale a #rgb / #rrggbb hex by brightness f and multiply by light color lc (0..1)
-export function tint(hex: string, f: number, lc: V3 = [1, 1, 1]): string {
+function tint(hex: string, f: number, lc: V3 = [1, 1, 1]): string {
   let r: number, g: number, bl: number
   if (hex.length === 4) {
     r = parseInt(hex[1], 16) * 17

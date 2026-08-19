@@ -21,7 +21,6 @@ export interface Building extends Pt {
   mn?: ResNode | null // miner: node being mined
   mp?: number // miner: phase timer
   sh?: number // miner: shots left on the current energy charge
-  res?: number // energy units in-flight toward this building (reserved, not yet arrived)
   ni?: number // round-robin index for cycling through neighbors when relaying energy
   route?: Building | null // forced relay target (set via 'z'); overrides round-robin
   chain?: Building | null // tower: next tower in the laser chain (set via 'z')

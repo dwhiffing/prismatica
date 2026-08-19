@@ -9,19 +9,18 @@ import {
   RES,
   TOWER_RANGE,
 } from './constants'
-import { canPlace, near, nearest, unproject } from './core'
+import { canPlace, near, nearest, rnd, unproject } from './core'
 import { computeSun } from './lighting'
 import { render } from './render'
 import { C, LT, resize, S, SPAWN, V } from './state'
 import { stepSim } from './sim'
 import { drawUI } from './ui'
-import type { BType, EType, Pt } from './types'
+import type { BType, Building, EType, Pt } from './types'
 
 addEventListener('resize', resize)
 
-function rnd() {
-  return Math.random()
-}
+// build a Building record with the shared defaults (energy 0, hp 20, no cooldown)
+const mkB = (t: BType, x: number, y: number, bp?: number): Building => ({ t, x, y, e: 0, hp: 20, cd: 0, bp })
 
 function reset() {
   S.enemies = []
@@ -38,18 +37,11 @@ function reset() {
   // (40), so every link is in range of the others and of the flanking solars.
   const TR = 22 // triangle circumradius
   S.buildings = [
-    { t: 'S', x: SPAWN.x - 35, y: SPAWN.y, e: 0, hp: 20, cd: 0 },
-    { t: 'S', x: SPAWN.x + 35, y: SPAWN.y, e: 0, hp: 20, cd: 0 },
+    mkB('S', SPAWN.x - 35, SPAWN.y),
+    mkB('S', SPAWN.x + 35, SPAWN.y),
     ...[0, 1, 2].map((i) => {
       const a = -Math.PI / 2 + (i * Math.PI * 2) / 3 // first vertex points up
-      return {
-        t: 'L' as BType,
-        x: SPAWN.x + Math.cos(a) * TR,
-        y: SPAWN.y + Math.sin(a) * TR,
-        e: 0,
-        hp: 20,
-        cd: 0,
-      }
+      return mkB('L', SPAWN.x + Math.cos(a) * TR, SPAWN.y + Math.sin(a) * TR)
     }),
   ]
   // resource crystals grow in PATCHES: a few cluster centers, each seeded with several
@@ -160,15 +152,7 @@ C.onpointerup = (e: PointerEvent) => {
     if (S.resource < COST[S.tool]) return
     if (!canPlace(S.tool, p.x, p.y)) return // blocked: would overlap another building/node
     S.resource -= COST[S.tool]
-    S.buildings.push({
-      t: S.tool,
-      x: p.x,
-      y: p.y,
-      e: 0,
-      hp: 20,
-      cd: 0,
-      bp: BUILD[S.tool],
-    })
+    S.buildings.push(mkB(S.tool, p.x, p.y, BUILD[S.tool]))
     if (!e.shiftKey) S.mode = 'select' // hold shift to keep placing
     drawUI()
   } else if (S.linking && S.sel) {

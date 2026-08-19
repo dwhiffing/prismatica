@@ -26,7 +26,6 @@ export const COST: Record<BType, number> = { S: 30, L: 5, M: 20, T: 25 } // reso
 export const BUILD: Record<BType, number> = { S: 25, L: 2, M: 5, T: 10 } // energy to construct
 export const CHARGE = 5 // energy a miner/tower stores at full charge
 export const NODE_AMT = 50 // starting resources in a crystal node
-export const START = 70 // starting resources (a generator + two miners)
 export const ENEMIES = true // master switch: set false to disable enemy spawns
 export const ESPEED = 10 // enemy speed px/s
 

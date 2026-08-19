@@ -13,7 +13,7 @@ import type { BType } from './types'
 import { GROUND_TILE, makeGround } from './ground'
 import { hull, meshOf, norm, rotate } from './geometry'
 import { shade } from './lighting'
-import { COL, ENTITIES, type Entity } from './models'
+import { ENTITIES, type Entity } from './models'
 import { LT, S, SPAWN, SUN, V, X } from './state'
 import type { Building, Face, V3 } from './types'
 
@@ -373,6 +373,15 @@ export function render() {
   X.lineWidth = 1
 
   const rad = 7 * S.ZOOM // glow radius (shared by chain beams, energy pulses, miner lasers)
+  // soft radial glow at screen (ax,ay): `c` is the "r,g,b" body, `k` scales opacity.
+  const glow = (ax: number, ay: number, c: string, k = 1) => {
+    const grd = X.createRadialGradient(ax, ay, 0, ax, ay, rad)
+    grd.addColorStop(0, `rgba(${c},${0.9 * k})`)
+    grd.addColorStop(0.3, `rgba(${c},${0.25 * k})`)
+    grd.addColorStop(1, `rgba(${c},0)`)
+    X.fillStyle = grd
+    X.fillRect(ax - rad, ay - rad, rad * 2, rad * 2)
+  }
 
   // laser-chain lines: a red beam tower->tower along each chain link. When the chain's
   // HEAD is actively shooting the beam is thick (scales with chain size); idle chains are
@@ -380,12 +389,7 @@ export function render() {
   // the rest.
   const chainGlow = (x: number, y: number, k: number) => {
     const [ax, ay] = g(x, y, 18)
-    const grd = X.createRadialGradient(ax, ay, 0, ax, ay, rad)
-    grd.addColorStop(0, `rgba(255,170,150,${0.9 * k})`)
-    grd.addColorStop(0.3, `rgba(255,100,100,${0.25 * k})`)
-    grd.addColorStop(1, 'rgba(255,100,100,0)')
-    X.fillStyle = grd
-    X.fillRect(ax - rad, ay - rad, rad * 2, rad * 2)
+    glow(ax, ay, '255,120,110', k)
   }
   X.strokeStyle = '#f66'
   X.lineCap = 'round'
@@ -418,12 +422,7 @@ export function render() {
     const x = p.x + (p.tx - p.x) * p.p,
       y = p.y + (p.ty - p.y) * p.p
     const [sx, sy] = g(x, y, 8)
-    const grd = X.createRadialGradient(sx, sy, 0, sx, sy, rad)
-    grd.addColorStop(0, 'rgba(255,255,180,0.9)')
-    grd.addColorStop(0.3, 'rgba(255,238,120,0.25)')
-    grd.addColorStop(1, 'rgba(255,238,120,0)')
-    X.fillStyle = grd
-    X.fillRect(sx - rad, sy - rad, rad * 2, rad * 2)
+    glow(sx, sy, '255,238,120')
   }
 
   // tower beams: the head fires at an enemy, with a glow at the tower origin
@@ -433,12 +432,7 @@ export function render() {
     if (b.t === 'T' && b.fxt && b.fxt > 0 && b.fx) {
       const [ax, ay] = g(b.x, b.y, 20),
         [bx, by] = g(b.fx.x, b.fx.y, 7)
-      const grd = X.createRadialGradient(ax, ay, 0, ax, ay, rad)
-      grd.addColorStop(0, 'rgba(255,180,160,0.9)')
-      grd.addColorStop(0.3, 'rgba(255,110,110,0.25)')
-      grd.addColorStop(1, 'rgba(255,110,110,0)')
-      X.fillStyle = grd
-      X.fillRect(ax - rad, ay - rad, rad * 2, rad * 2)
+      glow(ax, ay, '255,120,110')
       X.beginPath()
       X.moveTo(ax, ay)
       X.lineTo(bx, by)
@@ -446,22 +440,15 @@ export function render() {
     }
   // miner lasers: fade in over the first 300ms and out over the last 300ms of the 1s cut.
   // A green glow (same soft radial style as energy pulses) pulses at the laser origin.
-  X.strokeStyle = COL.M
+  X.strokeStyle = '#4f8' // miner green (COL.M)
   for (const b of buildings)
     if (b.t === 'M' && b.mn) {
       const mp = b.mp || 0
       const a = Math.max(0, Math.min(1, Math.min(mp, 1 - mp) / 0.3)) // shared fade
       const [ax, ay] = g(b.x, b.y, 16),
         [bx, by] = g(b.mn.x, b.mn.y, 6)
-      // origin glow
-      const grd = X.createRadialGradient(ax, ay, 0, ax, ay, rad)
-      grd.addColorStop(0, `rgba(150,255,190,${0.9 * a})`)
-      grd.addColorStop(0.3, `rgba(80,255,150,${0.25 * a})`)
-      grd.addColorStop(1, 'rgba(80,255,150,0)')
-      X.fillStyle = grd
-      X.fillRect(ax - rad, ay - rad, rad * 2, rad * 2)
-      // beam
-      X.globalAlpha = a
+      glow(ax, ay, '80,255,150', a) // origin glow
+      X.globalAlpha = a // beam
       X.beginPath()
       X.moveTo(ax, ay)
       X.lineTo(bx, by)
