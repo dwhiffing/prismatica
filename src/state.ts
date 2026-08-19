@@ -36,6 +36,7 @@ export const S = {
   ZOOM: 3, // camera zoom (scroll to change)
   camX: 0,
   camY: 0, // world-space point centered on screen
+  muteState: +(localStorage.m ?? 2), // 0=muted, 1=sfx only (no music), 2=all sound; persisted
 }
 export const SPAWN: Pt = { x: 0, y: 0 } // player origin
 

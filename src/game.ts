@@ -12,12 +12,26 @@ import {
 import { canPlace, near, nearest, rnd, unproject } from './core'
 import { computeSun } from './lighting'
 import { render } from './render'
+import { clickSound } from './sounds'
 import { C, LT, resize, S, SPAWN, V } from './state'
 import { stepSim } from './sim'
 import { drawUI } from './ui'
+import { playMusic, toggleMute, zzfx, zzfxX } from './zzfx'
 import type { BType, Building, EType, Pt } from './types'
 
 addEventListener('resize', resize)
+
+// start the looped music on the first user gesture — browsers keep the AudioContext
+// suspended until an interaction, so "on load" music must begin here.
+let audioOn = false
+function startAudio() {
+  if (audioOn) return
+  audioOn = true
+  zzfxX.resume()
+  playMusic()
+}
+addEventListener('pointerdown', startAudio)
+addEventListener('keydown', startAudio)
 
 // build a Building record with the shared defaults (energy 0, hp 20, no cooldown)
 const mkB = (t: BType, x: number, y: number, bp?: number): Building => ({ t, x, y, e: 0, hp: 20, cd: 0, bp })
@@ -147,6 +161,7 @@ C.onpointerup = (e: PointerEvent) => {
   dragging = false
   C.releasePointerCapture?.(e.pointerId)
   if (didDrag) return // it was a pan, not a click
+  zzfx(...clickSound)
   const p = unproject(mx(e), my(e))
   if (S.mode === 'build') {
     if (S.resource < COST[S.tool]) return
@@ -176,7 +191,7 @@ C.onpointerup = (e: PointerEvent) => {
     }
   } else {
     // select nearest building within pick radius; else nearest crystal node
-    S.sel = nearest(p, () => true, 24 * 24)
+    S.sel = nearest(p, () => true, 12 * 12)
     S.selN = null
     if (!S.sel) {
       let bd = 26 * 26
@@ -218,6 +233,11 @@ addEventListener('keydown', (e: KeyboardEvent) => {
     S.sel = S.selN = null // deselect any building/node when starting a build
     S.linking = false
     drawUI()
+    return
+  }
+  // 'm': cycle the mute state (muted / music only / all sound)
+  if (e.key === 'm') {
+    toggleMute()
     return
   }
   // 'd': sell the selected building, refunding half its build cost
