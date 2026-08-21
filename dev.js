@@ -49,7 +49,7 @@ const LEVA = `
         shAlpha: { value: LT.shAlpha, min: 0, max: 1, step: 0.01, label: 'opacity' },
       }, { collapsed: true }),
       resources: folder({
-        patches:     { value: LT.patches,     min: 1, max: 20,  step: 1, label: 'patch count' },
+        patchDensity: { value: LT.patchDensity, min: 0.00001, max: 0.001, step: 0.00001, label: 'density' },
         patchMin:    { value: LT.patchMin,    min: 1, max: 60,  step: 1, label: 'min per patch' },
         patchMax:    { value: LT.patchMax,    min: 1, max: 60,  step: 1, label: 'max per patch' },
         patchSpread: { value: LT.patchSpread, min: 10, max: 400, step: 5, label: 'spread radius' },
@@ -67,7 +67,7 @@ const LEVA = `
     // drop-shadow params
     LT.shFloor = v.shFloor; LT.shLean = v.shLean; LT.shLen = v.shLen; LT.shAlpha = v.shAlpha;
     // resource-generation params (take effect on the next regenerate / reset)
-    LT.patches = v.patches; LT.patchMin = v.patchMin; LT.patchMax = v.patchMax; LT.patchSpread = v.patchSpread; LT.patchGap = v.patchGap;
+    LT.patchDensity = v.patchDensity; LT.patchMin = v.patchMin; LT.patchMax = v.patchMax; LT.patchSpread = v.patchSpread; LT.patchGap = v.patchGap;
     return null;
   }
   createRoot(document.getElementById('leva-root')).render(e(React.Fragment, null, e(Leva, { collapsed: false }), e(Panel)));

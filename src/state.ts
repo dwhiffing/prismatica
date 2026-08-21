@@ -2,7 +2,7 @@
 // `S` object so any module can read+write S.foo without ES live-binding issues
 // (the object reference is constant; only its properties change). SUN/LT are
 // likewise objects mutated in place.
-import { RES } from './constants'
+import { INIT_ZOOM } from './constants'
 import type { BType, Building, Enemy, Pt, Pulse, ResNode, V3 } from './types'
 
 // --- canvas / viewport ---
@@ -11,9 +11,8 @@ export const X = C.getContext('2d')!
 export const H = document.getElementById('h') as HTMLDivElement
 export const V = { W: 0, Hh: 0 } // viewport size (updated on resize)
 export function resize() {
-  // render at a lower internal resolution; CSS stretches the canvas back to full window.
-  V.W = C.width = (innerWidth * RES) | 0
-  V.Hh = C.height = (innerHeight * RES) | 0
+  V.W = C.width = innerWidth
+  V.Hh = C.height = innerHeight
 }
 
 // --- world + camera + interaction state ---
@@ -33,7 +32,8 @@ export const S = {
   spawnT: 0, // enemies already spawned in the current threat level
   threat: 0, // threat level: +1 each minute; level N spawns N enemies over that minute
   t: 0, // elapsed seconds
-  ZOOM: 3, // camera zoom (scroll to change)
+  revealed: [] as Pt[], // world points permanently uncovered by fog of war (grows only)
+  ZOOM: INIT_ZOOM, // camera zoom (scroll wheel to change; clamped MIN_ZOOM..MAX_ZOOM)
   camX: 0,
   camY: 0, // world-space point centered on screen
   muteState: +(localStorage.m ?? 2), // 0=muted, 1=sfx only (no music), 2=all sound; persisted
@@ -64,11 +64,11 @@ export const LT = ((globalThis as any).LT ||= {
   shLen: 1.5, // how much longer shadows get as the sun lowers
   shAlpha: 0.2, // base shadow opacity
   // resource crystal patch generation (read by reset() in game.ts)
-  patches: 4, // number of crystal patches
-  patchMin: 6, // fewest crystals per patch
-  patchMax: 12, // most crystals per patch
-  patchSpread: 120, // scatter radius around each patch center
-  patchGap: 250, // min distance between patch centers
+  patchDensity: 0.000015, // patches per square world unit
+  patchMin: 3, // fewest crystals per patch
+  patchMax: 6, // most crystals per patch
+  patchSpread: 105, // scatter radius around each patch center
+  patchGap: 200, // min distance between patch centers
 })
 
 // Derived sun state, recomputed each frame from LT.dayT by computeSun().

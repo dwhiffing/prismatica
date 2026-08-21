@@ -1,5 +1,5 @@
-// Tunable constants for the game. (Mutable runtime state like ZOOM/camera lives in
-// game.ts; these are compile-time constants.)
+// Tunable constants for the game. (Mutable runtime state like the camera lives on
+// S in state.ts; these are compile-time constants.)
 import type { BType, EType, V3 } from './types'
 
 // --- gameplay ranges (world units) ---
@@ -33,10 +33,14 @@ export const ESPEED = 10 // enemy speed px/s
 export const PSPEED = 100 // energy pulse travel speed, world-units/sec (constant across hops)
 
 // --- camera / projection ---
-export const RES = 1 // render resolution scale: backing store is this × the window, then
-// CSS stretches it to full size (lower = chunkier pixels, cheaper to draw)
 export const ISO = 0.7 // vertical squash toward 1 = more overhead (0.5 = 2:1 dimetric)
 export const YSCALE = 0.8 // height exaggeration on screen
+// scroll-wheel zoom: starting level and the range it clamps to
+export const INIT_ZOOM = 3
+export const MIN_ZOOM = .2
+export const MAX_ZOOM = 3
+// fog of war: world-space radius each building reveals through the darkness
+export const REVEAL = 180
 
 // --- lighting colors (0..1 rgb) ---
 export const C_NIGHT: V3 = [0.55, 0.62, 1.0] // cool moonlight (bright enough to read at night)

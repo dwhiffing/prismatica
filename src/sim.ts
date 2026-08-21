@@ -10,7 +10,7 @@ const HOPS = 12 // a unit of energy dissipates after this many relays without la
 
 // is this building still under construction? (bp defined until the progress bar
 // finishes animating — bp===0 means paid but not yet visually complete)
-const building = (o: Building) => o.bp !== undefined
+const building = (o: Building) => o.bp != null
 // does this building want to KEEP an arriving unit? under construction (owes build
 // power), a miner that has no energy queued (never stockpiles), or a tower below full
 // charge. links never keep it.
@@ -22,11 +22,10 @@ function feed(o: Building) {
   else o.e += 1
 }
 
-// spawn a pulse from `from` to `to`, carrying a hop budget. `startT` staggers it.
-function hop(from: Pt, to: Building, hb: number, startT = 0): number {
+// spawn a pulse from `from` to `to`, carrying a hop budget.
+function hop(from: Pt, to: Building, hb: number) {
   const len = Math.hypot(to.x - from.x, to.y - from.y)
-  S.pulses.push({ x: from.x, y: from.y, tx: to.x, ty: to.y, p: 0, delay: startT, len, dst: to, hb })
-  return len / PSPEED
+  S.pulses.push({ x: from.x, y: from.y, tx: to.x, ty: to.y, p: 0, len, dst: to, hb })
 }
 
 // a neighbour that can receive a relayed unit: anything that keeps energy
@@ -35,24 +34,43 @@ function hop(from: Pt, to: Building, hb: number, startT = 0): number {
 const canReceive = (o: Building) => o.t !== 'S' || building(o)
 // relay a unit onward FROM `node`: cycle through its in-range neighbours (round
 // robin via ni) and hop to the next one. `hb` is the remaining hop budget; energy
-// dissipates at 0. `startT` staggers the pulse after the previous hop.
-function relay(node: Building, hb: number, startT = 0) {
+// dissipates at 0.
+function relay(node: Building, hb: number) {
   if (hb <= 0) return
   // forced route (set via 'z') always wins, as long as the target is alive & in range
   const rt = node.route
   if (rt && S.buildings.includes(rt) && near(node, rt, LINK_RANGE)) {
-    hop(node, rt, hb - 1, startT)
+    hop(node, rt, hb - 1)
     return
   }
   const ns = S.buildings.filter((o) => o !== node && canReceive(o) && near(node, o, LINK_RANGE))
   if (!ns.length) return
   node.ni = ((node.ni || 0) + 1) % ns.length
-  hop(node, ns[node.ni], hb - 1, startT)
+  hop(node, ns[node.ni], hb - 1)
 }
 
 function emitEnergy() {
   // every finished solar emits a unit into a neighbour (cycled round-robin)
   for (const b of S.buildings) if (b.t === 'S' && !building(b)) relay(b, HOPS)
+}
+
+const validChain = (a: Building) =>
+  a.chain && S.buildings.includes(a.chain) && !building(a.chain) && near(a, a.chain, TOWER_RANGE)
+    ? a.chain
+    : null
+export const chainHead = (t: Building): Building => {
+  let head = t, g = 0
+  for (;;) {
+    const prev = S.buildings.find((o) => o.t === 'T' && o.chain === head && S.buildings.includes(o))
+    if (!prev || ++g > 99) break
+    head = prev
+  }
+  return head
+}
+export const towerChainLen = (t: Building): number => {
+  let n = 1, cur: Building | null = chainHead(t), g = 0
+  while (cur && cur.chain && S.buildings.includes(cur.chain) && ++g < 99) { n++; cur = cur.chain }
+  return n
 }
 
 // per-second tick: emit energy, advance the threat level, spawn enemies far from spawn.
@@ -93,10 +111,7 @@ let acc = 0 // fixed-timestep accumulator for the 1s tick
 export function stepSim(dt: number) {
   S.t += dt
   acc += dt
-  while (acc >= 1) {
-    acc -= 1
-    tick()
-  }
+  while (acc >= 1) { acc -= 1; tick() }
 
   // Construction: `bp` counts down as energy arrives (one chunk per unit). When it
   // hits 0 the building is complete — clear bp so it becomes solid and operational.
@@ -108,31 +123,14 @@ export function stepSim(dt: number) {
     n.ds = (n.ds || 0) + (target - (n.ds || 0)) * Math.min(1, dt * 4)
   }
 
-  // laser chains: a tower is the HEAD of its chain if no other (finished, in-range)
-  // tower chains INTO it. Only the head fires; its range & damage scale with the number
-  // of towers in the chain (walk `chain` pointers from the head, with a cycle guard).
-  const validChain = (a: Building) =>
-    a.chain && S.buildings.includes(a.chain) && !building(a.chain) && near(a, a.chain, TOWER_RANGE)
-      ? a.chain
-      : null
-  const isHead = (b: Building) =>
-    !S.buildings.some((o) => o.t === 'T' && !building(o) && validChain(o) === b)
-  const chainLen = (head: Building) => {
-    let n = 1,
-      cur: Building | null = head,
-      guard = 0
-    while (cur && (cur = validChain(cur)) && ++guard < 99) n++
-    return n
-  }
-
   // towers fire at enemies in range
   for (const b of S.buildings) {
     if (building(b)) continue // under construction — doesn't operate yet
     if (b.t === 'T') {
       b.cd -= dt
       // only the chain head fires; solo towers (chain of 1) fire normally
-      if (b.cd <= 0 && b.e > 0 && isHead(b)) {
-        const len = chainLen(b)
+      if (b.cd <= 0 && b.e > 0 && !S.buildings.some((o) => o.t === 'T' && !building(o) && validChain(o) === b)) {
+        const len = towerChainLen(b)
         const range = TOWER_RANGE * (1 + CHAIN_RANGE * (len - 1))
         const en = S.enemies.find((e) => near(b, e, range))
         if (en) {
@@ -196,11 +194,10 @@ export function stepSim(dt: number) {
   }
   S.buildings = S.buildings.filter((b) => b.hp > 0)
 
-  // pulses travel at constant world-speed after their stagger delay. On arrival at
-  // dst: if it wants the unit, keep it; otherwise relay onward (or dissipate).
+  // pulses travel at constant world-speed. On arrival at dst: if it wants the unit,
+  // keep it; otherwise relay onward (or dissipate).
   for (const p of S.pulses) {
-    if (p.delay > 0) p.delay -= dt
-    else p.p += (dt * PSPEED) / (p.len || 1)
+    p.p += (dt * PSPEED) / (p.len || 1)
     if (p.p >= 1 && p.dst) {
       if (wants(p.dst)) feed(p.dst) // consumer keeps it (or it builds the building)
       else if (p.dst.t === 'L' && !building(p.dst)) relay(p.dst, p.hb) // only a finished LINK forwards

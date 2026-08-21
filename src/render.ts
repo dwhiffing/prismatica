@@ -6,6 +6,7 @@ import {
   LINK_RANGE,
   MINE_RANGE,
   R,
+  REVEAL,
   TOWER_RANGE,
 } from './constants'
 import { canPlace, depth, iso, unproject } from './core'
@@ -13,13 +14,22 @@ import type { BType } from './types'
 import { GROUND_TILE, makeGround } from './ground'
 import { hull, meshOf, norm, rotate } from './geometry'
 import { shade } from './lighting'
+import { drawMinimap } from './minimap'
+import { drawThreat } from './threat'
+// off-screen awareness toggle, injected by bundle.js (esbuild `define`). true = corner
+// minimap, false = edge threat arrows. As a literal, the dead branch + module DCE out.
+declare const MINIMAP: boolean
+// fog-of-war toggle, injected by bundle.js. As a literal, the whole fog pass DCEs when off.
+declare const FOG: boolean
 import { ENTITIES, type Entity } from './models'
-import { LT, S, SPAWN, SUN, V, X } from './state'
-import type { Building, Face, V3 } from './types'
+import { LT, S, SUN, V, X } from './state'
+import { chainHead, towerChainLen } from './sim'
+import type { Face, V3 } from './types'
 
-// push all of an entity's splines (each lathed, transformed by its own
-// scale/rotation/offset, then the entity ground pos + uniform scale s) as shaded
-// faces. `override` replaces every spline color (used for build preview).
+function tp(pts: [number, number][]) { for (let i = 0; i < pts.length; i++) i ? X.lineTo(pts[i][0], pts[i][1]) : X.moveTo(pts[i][0], pts[i][1]) }
+function xv(v: V3, sp: { scl: number; rot: V3 }) { return rotate([v[0] * sp.scl, v[1] * sp.scl, v[2] * sp.scl], sp.rot) }
+function beam(ax: number, ay: number, bx: number, by: number) { X.beginPath(); X.moveTo(ax, ay); X.lineTo(bx, by); X.stroke() }
+
 function entityFaces(
   ent: Entity,
   gx: number,
@@ -33,14 +43,7 @@ function entityFaces(
     const col = override || sp.mat.col
     for (const f of m.faces) {
       const wv: V3[] = f.map((i) => {
-        const lv = rotate(
-          [
-            m.verts[i][0] * sp.scl,
-            m.verts[i][1] * sp.scl,
-            m.verts[i][2] * sp.scl,
-          ],
-          sp.rot,
-        )
+        const lv = xv(m.verts[i], sp)
         // entity scale s, drop onto ground; clamp y>=0 so sub-surface geometry is cut off
         return [
           gx + (lv[0] + sp.off[0]) * s,
@@ -78,11 +81,7 @@ function entityFaces(
 function fillFace(f: Face) {
   X.fillStyle = f.c
   X.beginPath()
-  for (let i = 0; i < f.v.length; i++) {
-    const [sx, sy] = iso(f.v[i][0], f.v[i][1], f.v[i][2])
-    if (i === 0) X.moveTo(sx, sy)
-    else X.lineTo(sx, sy)
-  }
+  tp(f.v.map(v => iso(v[0], v[1], v[2])))
   X.closePath()
   X.fill()
 }
@@ -148,7 +147,7 @@ function shadowPoints(ent: Entity, L: V3): [number, number][] {
   for (const sp of ent.splines) {
     const m = meshOf(sp.geo)
     for (const v of m.verts) {
-      const lv = rotate([v[0] * sp.scl, v[1] * sp.scl, v[2] * sp.scl], sp.rot)
+      const lv = xv(v, sp)
       const wy = lv[1] + sp.off[1]
       const t = -wy / L[1] // slide along L to y=0
       pts.push([lv[0] + sp.off[0] + L[0] * t, lv[2] + sp.off[2] + L[2] * t])
@@ -170,10 +169,7 @@ function addShadow(ent: Entity, gx: number, gz: number, s: number) {
   ])
   const pts = shadowPoints(ent, L)
   if (pts.length < 3) return
-  for (let i = 0; i < pts.length; i++) {
-    const [sx, sy] = iso(gx + pts[i][0] * s, 0, gz + pts[i][1] * s)
-    i ? X.lineTo(sx, sy) : X.moveTo(sx, sy)
-  }
+  tp(pts.map(p => iso(gx + p[0] * s, 0, gz + p[1] * s)))
   X.closePath()
 }
 
@@ -184,7 +180,7 @@ function entityOutline(ent: Entity, gx: number, gz: number, s: number, col: stri
   for (const sp of ent.splines) {
     const m = meshOf(sp.geo)
     for (const v of m.verts) {
-      const lv = rotate([v[0] * sp.scl, v[1] * sp.scl, v[2] * sp.scl], sp.rot)
+      const lv = xv(v, sp)
       pts.push(
         iso(gx + (lv[0] + sp.off[0]) * s, Math.max(0, (lv[1] + sp.off[1]) * s), gz + (lv[2] + sp.off[2]) * s),
       )
@@ -196,7 +192,7 @@ function entityOutline(ent: Entity, gx: number, gz: number, s: number, col: stri
   X.lineWidth = 2
   X.lineJoin = 'round'
   X.beginPath()
-  for (let i = 0; i < h.length; i++) i ? X.lineTo(h[i][0], h[i][1]) : X.moveTo(h[i][0], h[i][1])
+  tp(h)
   X.closePath()
   X.stroke()
   X.lineWidth = 1
@@ -207,35 +203,11 @@ function g(gx: number, gy: number, yUp = 0): [number, number] {
   return iso(gx, yUp, gy)
 }
 
-// the HEAD of the laser chain `t` belongs to: walk back along incoming chain links to
-// the tower that nothing else chains into. The head is the one that actually fires.
-function chainHead(t: Building): Building {
-  const bs = S.buildings
-  let head = t,
-    g = 0
-  for (;;) {
-    const prev = bs.find((o) => o.t === 'T' && o.chain === head && bs.includes(o))
-    if (!prev || ++g > 99) break
-    head = prev
-  }
-  return head
-}
-// number of towers in the whole chain that `t` belongs to (count forward from the head).
-// Matches the sim's head-based chain length so the ring/beam agree with the actual bonus.
-function towerChainLen(t: Building): number {
-  const bs = S.buildings
-  let n = 1,
-    cur: Building | null = chainHead(t),
-    g = 0
-  while (cur && cur.chain && bs.includes(cur.chain) && ++g < 99) {
-    n++
-    cur = cur.chain
-  }
-  return n
-}
-
 const GPAT = makeGround(X) // procedural tileable dirt texture
 const GTS = GROUND_TILE
+// offscreen buffer the fog-of-war pass is composited on (see render)
+const FC = FOG ? document.createElement('canvas') : (0 as never)
+const FX = FOG ? FC.getContext('2d')! : (0 as never)
 
 export function render() {
   const { buildings, nodes, enemies, pulses } = S
@@ -266,11 +238,10 @@ export function render() {
   // construction progress ring (green chunks). The selected building's white
   // silhouette outline is drawn later, on top of its model.
   for (const b of buildings)
-    if (b.bp !== undefined)
+    if (b.bp != null)
       chunkRing(b.x, b.y, R[b.t] + 5, BUILD[b.t], BUILD[b.t] - b.bp)
   if (S.selN && S.selN.amt > 0)
     groundRing(S.selN.x, S.selN.y, R[S.selN.k] + 1, '#fff', 1, 6)
-  groundRing(SPAWN.x, SPAWN.y, 10, '#456') // spawn marker
 
   // cast drop shadows: collect every silhouette into ONE path, then fill once so
   // overlapping shadows merge into a single flat region (no darker overlaps).
@@ -280,7 +251,7 @@ export function render() {
   for (const n of nodes)
     if ((n.ds || 0) > 0.02) addShadow(ENTITIES[n.k], n.x, n.y, n.ds!)
   for (const b of buildings)
-    if (b.bp === undefined) addShadow(ENTITIES[b.t], b.x, b.y, 1) // skip under-construction
+    if (b.bp == null) addShadow(ENTITIES[b.t], b.x, b.y, 1)
   for (const e of enemies) addShadow(ENTITIES.E, e.x, e.y, 1)
   X.fill('nonzero') // nonzero winding: overlaps count as inside, filled uniformly
   X.globalAlpha = 1
@@ -290,7 +261,7 @@ export function render() {
   for (const n of nodes)
     if ((n.ds || 0) > 0.02) entityFaces(ENTITIES[n.k], n.x, n.y, n.ds!, faces)
   for (const b of buildings)
-    if (b.bp === undefined) entityFaces(ENTITIES[b.t], b.x, b.y, 1, faces)
+    if (b.bp == null) entityFaces(ENTITIES[b.t], b.x, b.y, 1, faces)
   for (const e of enemies) entityFaces(ENTITIES.E, e.x, e.y, 1, faces)
   faces.sort((a, b) => a.d - b.d)
   for (const f of faces) fillFace(f)
@@ -298,9 +269,9 @@ export function render() {
   // under-construction buildings: draw a white silhouette outline (the model itself
   // stays invisible; the chunk ring shows build progress on the ground)
   for (const b of buildings)
-    if (b.bp !== undefined) entityOutline(ENTITIES[b.t], b.x, b.y, 1, '#fff')
+    if (b.bp != null) entityOutline(ENTITIES[b.t], b.x, b.y, 1, '#fff')
   // selected building: white silhouette outline on top of its (already-drawn) model
-  if (S.sel && S.sel.bp === undefined) entityOutline(ENTITIES[S.sel.t], S.sel.x, S.sel.y, 1, '#fff')
+  if (S.sel && S.sel.bp == null) entityOutline(ENTITIES[S.sel.t], S.sel.x, S.sel.y, 1, '#fff')
 
   // build-mode placement preview: translucent model + range ring under the cursor
   if (S.mode === 'build' && S.mouse) {
@@ -317,10 +288,7 @@ export function render() {
           [bx, by] = iso(tx, 4, ty)
         X.strokeStyle = col
         X.globalAlpha = 0.6
-        X.beginPath()
-        X.moveTo(ax, ay)
-        X.lineTo(bx, by)
-        X.stroke()
+        beam(ax, ay, bx, by)
         X.globalAlpha = 1
       }
       const inR = (o: { x: number; y: number }, r: number) =>
@@ -354,20 +322,14 @@ export function render() {
     if (b.route && buildings.includes(b.route)) {
       const [ax, ay] = g(b.x, b.y, 6),
         [bx, by] = g(b.route.x, b.route.y, 6)
-      X.beginPath()
-      X.moveTo(ax, ay)
-      X.lineTo(bx, by)
-      X.stroke()
+      beam(ax, ay, bx, by)
     }
   // linking armed: preview line from the selected source to the cursor
   if (S.linking && S.sel && S.mouse) {
     const c = unproject(S.mouse.x, S.mouse.y)
     const [ax, ay] = g(S.sel.x, S.sel.y, 6),
       [bx, by] = g(c.x, c.y, 6)
-    X.beginPath()
-    X.moveTo(ax, ay)
-    X.lineTo(bx, by)
-    X.stroke()
+    beam(ax, ay, bx, by)
   }
   X.setLineDash([])
   X.lineWidth = 1
@@ -394,7 +356,7 @@ export function render() {
   X.strokeStyle = '#f66'
   X.lineCap = 'round'
   for (const b of buildings)
-    if (b.t === 'T' && b.chain && buildings.includes(b.chain) && b.bp === undefined) {
+    if (b.t === 'T' && b.chain && buildings.includes(b.chain) && b.bp == null) {
       const head = chainHead(b)
       const firing = !!(head.fxt && head.fxt > 0 && head.fx) // whole chain lights up together
       const [ax, ay] = g(b.x, b.y, 18),
@@ -408,10 +370,7 @@ export function render() {
         X.globalAlpha = 0.4
         X.lineWidth = 1.5 // thin idle connector
       }
-      X.beginPath()
-      X.moveTo(ax, ay)
-      X.lineTo(bx, by)
-      X.stroke()
+      beam(ax, ay, bx, by)
     }
   X.globalAlpha = 1
   X.lineCap = 'butt'
@@ -419,8 +378,7 @@ export function render() {
 
   // energy pulses: soft glowing orbs (radial gradient fading to transparent)
   for (const p of pulses) {
-    const x = p.x + (p.tx - p.x) * p.p,
-      y = p.y + (p.ty - p.y) * p.p
+    const x = p.x + (p.tx - p.x) * p.p, y = p.y + (p.ty - p.y) * p.p
     const [sx, sy] = g(x, y, 8)
     glow(sx, sy, '255,238,120')
   }
@@ -433,10 +391,7 @@ export function render() {
       const [ax, ay] = g(b.x, b.y, 20),
         [bx, by] = g(b.fx.x, b.fx.y, 7)
       glow(ax, ay, '255,120,110')
-      X.beginPath()
-      X.moveTo(ax, ay)
-      X.lineTo(bx, by)
-      X.stroke()
+      beam(ax, ay, bx, by)
     }
   // miner lasers: fade in over the first 300ms and out over the last 300ms of the 1s cut.
   // A green glow (same soft radial style as energy pulses) pulses at the laser origin.
@@ -449,13 +404,40 @@ export function render() {
         [bx, by] = g(b.mn.x, b.mn.y, 6)
       glow(ax, ay, '80,255,150', a) // origin glow
       X.globalAlpha = a // beam
-      X.beginPath()
-      X.moveTo(ax, ay)
-      X.lineTo(bx, by)
-      X.stroke()
+      beam(ax, ay, bx, by)
     }
   X.globalAlpha = 1
   X.lineWidth = 1
+
+  // fog of war: one dark shape covering the screen with a circular CUTOUT at each
+  // building, filled even-odd so the already-drawn world shows through the holes and only
+  // the unrevealed area is darkened. REVEAL is a world distance, so scale by zoom.
+  if (FOG) {
+    // Persistent fog of war: the first time a building finishes, its world position is
+    // recorded into S.revealed (grows only, never cleared). Each frame we re-project every
+    // revealed point and punch it out of a black offscreen buffer via destination-out
+    // (overlaps merge cleanly, world untouched), then blit the buffer over the scene. Since
+    // reveals are stored in WORLD space and re-projected, they stay put through pan/zoom and
+    // survive the building being destroyed. REVEAL is a world distance, so scale by zoom.
+    for (const b of buildings)
+      if (b.bp == null && !b.rv) { b.rv = true; S.revealed.push({ x: b.x, y: b.y }) }
+    if (FC.width !== V.W || FC.height !== V.Hh) { FC.width = V.W; FC.height = V.Hh }
+    FX.clearRect(0, 0, V.W, V.Hh)
+    FX.fillStyle = '#000'
+    FX.fillRect(0, 0, V.W, V.Hh)
+    FX.globalCompositeOperation = 'destination-out'
+    const rr = REVEAL * S.ZOOM
+    for (const p of S.revealed) {
+      const [sx, sy] = iso(p.x, 0, p.y)
+      // radial gradient: fully erase the inner 55%, feather out to transparent at the rim
+      const gr = FX.createRadialGradient(sx, sy, rr * 0.8, sx, sy, rr)
+      gr.addColorStop(0, '#000'); gr.addColorStop(1, 'rgba(0,0,0,0)')
+      FX.fillStyle = gr
+      FX.beginPath(); FX.arc(sx, sy, rr, 0, 7); FX.fill()
+    }
+    FX.globalCompositeOperation = 'source-over'
+    X.drawImage(FC, 0, 0)
+  }
 
   // energy count labels above powered buildings
   X.fillStyle = '#fff'
@@ -471,4 +453,6 @@ export function render() {
     X.fillText('' + Math.ceil(S.selN.amt), sx, sy)
   }
   X.textAlign = 'left'
+  if (MINIMAP) drawMinimap()
+  if (false) drawThreat()
 }

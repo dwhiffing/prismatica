@@ -18,5 +18,5 @@
     "external_directory": "ask",
     "doom_loop": "ask"
   },
-  "model": "lazer/qwen-3.7-plus"
+  "model": "lazer/claude-opus-4.6"
 }
