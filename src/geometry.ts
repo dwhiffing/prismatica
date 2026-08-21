@@ -2,9 +2,9 @@
 import type { Geo } from './models'
 import type { Mesh, V3 } from './types'
 
-export function norm(v: V3): V3 {
-  const l = Math.hypot(v[0], v[1], v[2]) || 1
-  return [v[0] / l, v[1] / l, v[2] / l]
+export function norm([x, y, z]: V3): V3 {
+  const l = Math.hypot(x, y, z) || 1
+  return [x / l, y / l, z / l]
 }
 
 // lathe a [radius,height] profile into verts + quad faces (surface of revolution)

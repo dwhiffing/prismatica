@@ -3,7 +3,7 @@
 // element is drawn with wrap-around copies so the tile repeats seamlessly.
 import { GROUND } from './constants'
 
-const GTS = 512 // tile size
+export const GTS = 512 // tile size
 
 export function makeGround(X: CanvasRenderingContext2D): CanvasPattern {
   const GT = document.createElement('canvas')
@@ -39,5 +39,3 @@ export function makeGround(X: CanvasRenderingContext2D): CanvasPattern {
   }
   return X.createPattern(GT, 'repeat')!
 }
-
-export const GROUND_TILE = GTS // exported so render() can align/scale the pattern

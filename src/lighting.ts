@@ -6,7 +6,7 @@ import type { V3 } from './types'
 
 // linear blend of two rgb (0..1) vectors
 function mix(a: V3, b: V3, t: number): V3 {
-  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
+  return a.map((v, i) => v + (b[i] - v) * t) as V3
 }
 
 // recompute SUN from the time of day (0..1). Called once per frame.

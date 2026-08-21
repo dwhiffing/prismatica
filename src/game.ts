@@ -19,7 +19,7 @@ import { C, LT, resize, S, SPAWN, V } from './state'
 import { stepSim } from './sim'
 import { drawUI } from './ui'
 import { playMusic, toggleMute, zzfx, zzfxX } from './zzfx'
-import type { BType, Building, EType, Pt } from './types'
+import type { BType, Building, EType } from './types'
 
 addEventListener('resize', resize)
 
@@ -38,40 +38,20 @@ addEventListener('keydown', startAudio)
 // build a Building record with the shared defaults (energy 0, hp 20, no cooldown)
 const mkB = (t: BType, x: number, y: number, bp?: number): Building => ({ t, x, y, e: 0, hp: 20, cd: 0, bp })
 
-export let mmRadius = 200
-const BP = 100
-export const worldRadius = () => mmRadius + BP
-const resRadius = () => mmRadius + 2 * BP
 const VARIANTS: [EType, number][] = [['N3', NODE_AMT * 0.35], ['N2', NODE_AMT * 0.65], ['N2', NODE_AMT * 0.65], ['N', NODE_AMT]]
-const patchCenters: Pt[] = []
+// sunflower (phyllotaxis) patch layout: patch i sits at angle i·GOLDEN and radius
+// spacing·i^0.7. The i^0.7 makes successive rings spread apart with distance, so clusters
+// thin out the further you get from spawn. Golden-angle rotation never self-overlaps, so
+// no patch-center dedup / min-gap bookkeeping is needed. World is a fixed LT.patchN patches.
+const GOLDEN = 2.399963 // radians (~137.5°)
+// outer extent of the generated field — used by the minimap to frame the world.
+export const worldRadius = () => LT.patchSpacing * (LT.patchN - 1) ** 0.7 + LT.patchSpread
 
-
-function checkExpansion() {
-  let md = 0
-  for (const b of S.buildings) {
-    const d = Math.max(Math.abs(b.x - SPAWN.x), Math.abs(b.y - SPAWN.y))
-    if (d > md) md = d
-  }
-  if (md > worldRadius() - 50) {
-    const old = mmRadius; mmRadius += BP
-    const a = (2 * resRadius()) ** 2 - (2 * (old + BP)) ** 2
-    for (let i = 0; i < Math.max(1, Math.round(a * LT.patchDensity)); i++) spawnPatch(SPAWN.x, SPAWN.y, old + BP, resRadius())
-  }
-}
-
-function spawnPatch(cx: number, cy: number, minR: number, maxR: number) {
-  let px = 0, py = 0
+function spawnPatch(cx: number, cy: number) {
   const r = () => (rnd() - rnd()) * LT.patchSpread
-  for (let t = 0; t < 30; t++) {
-    const x = (rnd() - 0.5) * 2 * maxR, y = (rnd() - 0.5) * 2 * maxR
-    if (Math.abs(x) < minR && Math.abs(y) < minR) continue
-    px = cx + x; py = cy + y
-    if (!patchCenters.some((c) => (c.x - px) ** 2 + (c.y - py) ** 2 < LT.patchGap ** 2)) break
-  }
-  patchCenters.push({ x: px, y: py })
   for (let i = 0; i < LT.patchMin + ((rnd() * (LT.patchMax - LT.patchMin + 1)) | 0); i++) {
     const [k, cap] = VARIANTS[(rnd() * 4) | 0]
-    const x = px + r(), y = py + r()
+    const x = cx + r(), y = cy + r()
     if (S.buildings.some((b) => (b.x - x) ** 2 + (b.y - y) ** 2 < (R[b.t] + R[k]) ** 2)) continue
     if (S.nodes.some((n) => n.amt > 0 && (n.x - x) ** 2 + (n.y - y) ** 2 < (R[n.k] + R[k]) ** 2)) continue
     S.nodes.push({ x, y, amt: cap, cap, k, ds: 1 })
@@ -79,12 +59,17 @@ function spawnPatch(cx: number, cy: number, minR: number, maxR: number) {
 }
 
 function reset() {
-  S.enemies = []; S.pulses = []; S.resource = 70; S.t = 0; S.spawnT = 0; S.revealed = []; patchCenters.length = 0
+  S.enemies = []; S.pulses = []; S.resource = 70; S.t = 0; S.spawnT = 0; S.revealed = []
   SPAWN.x = V.W / 2; SPAWN.y = V.Hh / 2; S.camX = SPAWN.x; S.camY = SPAWN.y
   S.buildings = [mkB('S', SPAWN.x - 35, SPAWN.y), mkB('S', SPAWN.x + 35, SPAWN.y),
     ...[0, 1, 2].map((i) => { const a = -Math.PI / 2 + (i * Math.PI * 2) / 3; return mkB('L', SPAWN.x + Math.cos(a) * 22, SPAWN.y + Math.sin(a) * 22) })]
-  S.nodes = []; mmRadius = 200
-  for (let i = 0; i < Math.max(1, Math.round((2 * resRadius()) ** 2 * LT.patchDensity)); i++) spawnPatch(SPAWN.x, SPAWN.y, 0, resRadius())
+  S.nodes = []
+  // lay the sunflower: patch 0 at spawn, each next one rotated by GOLDEN and pushed out
+  // by spacing·i^0.7 (rings spread with distance → clusters thin out further from spawn).
+  for (let i = 0; i < LT.patchN; i++) {
+    const rad = LT.patchSpacing * i ** 0.7, a = i * GOLDEN
+    spawnPatch(SPAWN.x + Math.cos(a) * rad, SPAWN.y + Math.sin(a) * rad)
+  }
 }
 
 // --- input: scroll to zoom, drag to pan, click to select/place ---
@@ -161,7 +146,6 @@ C.onpointerup = (e: PointerEvent) => {
     if (!canPlace(S.tool, p.x, p.y)) return // blocked: would overlap another building/node
     S.resource -= COST[S.tool]
     S.buildings.push(mkB(S.tool, p.x, p.y, BUILD[S.tool]))
-    checkExpansion()
     if (!e.shiftKey) S.mode = 'select' // hold shift to keep placing
     drawUI()
   } else if (S.linking && S.sel) {

@@ -6,45 +6,27 @@
   html,
   body {
     margin: 0;
-    height: 100%;
-    background: #0a0e12;
-    overflow: hidden;
     font: 13px monospace;
-    color: #9fb
+    color: #9fb;
   }
 
   #c {
-    display: block;
-    width: 100vw;
-    height: 100vh;
-    touch-action: none
+    image-rendering: pixelated;
   }
 
   #h {
     position: fixed;
     top: 0;
-    left: 0;
     padding: 6px 8px;
-    user-select: none
+    display: flex;
+    gap: 4px;
   }
 
   b {
-    display: inline-block;
     padding: 4px 7px;
-    margin-right: 4px;
-    background: #16222c;
     border: 1px solid #2c4;
     border-radius: 3px;
     cursor: pointer
-  }
-
-  b.a {
-    background: #2c4;
-    color: #000
-  }
-
-  canvas {
-    image-rendering: pixelated;
   }
 </style><canvas id=c></canvas>
 <div id=h></div>

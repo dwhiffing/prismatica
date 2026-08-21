@@ -4,6 +4,7 @@ import {
   CHAIN_RANGE,
   COST,
   LINK_RANGE,
+  LOD_ZOOM,
   MINE_RANGE,
   R,
   REVEAL,
@@ -11,7 +12,7 @@ import {
 } from './constants'
 import { canPlace, depth, iso, unproject } from './core'
 import type { BType } from './types'
-import { GROUND_TILE, makeGround } from './ground'
+import { GTS, makeGround } from './ground'
 import { hull, meshOf, norm, rotate } from './geometry'
 import { shade } from './lighting'
 import { drawMinimap } from './minimap'
@@ -26,8 +27,8 @@ import { LT, S, SUN, V, X } from './state'
 import { chainHead, towerChainLen } from './sim'
 import type { Face, V3 } from './types'
 
-function tp(pts: [number, number][]) { for (let i = 0; i < pts.length; i++) i ? X.lineTo(pts[i][0], pts[i][1]) : X.moveTo(pts[i][0], pts[i][1]) }
-function xv(v: V3, sp: { scl: number; rot: V3 }) { return rotate([v[0] * sp.scl, v[1] * sp.scl, v[2] * sp.scl], sp.rot) }
+function tp(pts: [number, number][]) { pts.forEach(([x, y], i) => i ? X.lineTo(x, y) : X.moveTo(x, y)) }
+function xv([x, y, z]: V3, sp: { scl: number; rot: V3 }) { return rotate([x * sp.scl, y * sp.scl, z * sp.scl], sp.rot) }
 function beam(ax: number, ay: number, bx: number, by: number) { X.beginPath(); X.moveTo(ax, ay); X.lineTo(bx, by); X.stroke() }
 
 function entityFaces(
@@ -36,11 +37,12 @@ function entityFaces(
   gz: number,
   s: number,
   out: Face[],
-  override?: string,
+  override?: string, // tint EVERY spline this color (blocked-placement preview)
+  swapGreen?: string, // recolor only the miner's green (#4f8) spline (starved indicator)
 ) {
   for (const sp of ent.splines) {
     const m = meshOf(sp.geo)
-    const col = override || sp.mat.col
+    const col = override || (swapGreen && sp.mat.col === '#4f8' ? swapGreen : sp.mat.col)
     for (const f of m.faces) {
       const wv: V3[] = f.map((i) => {
         const lv = xv(m.verts[i], sp)
@@ -82,7 +84,6 @@ function fillFace(f: Face) {
   X.fillStyle = f.c
   X.beginPath()
   tp(f.v.map(v => iso(v[0], v[1], v[2])))
-  X.closePath()
   X.fill()
 }
 
@@ -149,7 +150,7 @@ function shadowPoints(ent: Entity, L: V3): [number, number][] {
     for (const v of m.verts) {
       const lv = xv(v, sp)
       const wy = lv[1] + sp.off[1]
-      const t = -wy / L[1] // slide along L to y=0
+      const t = -wy / L[1]
       pts.push([lv[0] + sp.off[0] + L[0] * t, lv[2] + sp.off[2] + L[2] * t])
     }
   }
@@ -170,7 +171,6 @@ function addShadow(ent: Entity, gx: number, gz: number, s: number) {
   const pts = shadowPoints(ent, L)
   if (pts.length < 3) return
   tp(pts.map(p => iso(gx + p[0] * s, 0, gz + p[1] * s)))
-  X.closePath()
 }
 
 // outline an entity's on-screen silhouette: project every vertex to screen space,
@@ -203,8 +203,28 @@ function g(gx: number, gy: number, yUp = 0): [number, number] {
   return iso(gx, yUp, gy)
 }
 
+// viewport cull: is a ground point on (or near) screen? MARG covers a model's on-screen
+// height/footprint so tall entities near an edge aren't clipped early. Scales with zoom.
+function onScreen(o: { x: number; y: number }): boolean {
+  const [sx, sy] = iso(o.x, 0, o.y)
+  const m = 40 * S.ZOOM
+  return sx > -m && sx < V.W + m && sy > -m && sy < V.Hh + m
+}
+
+// LOD fallback: a flat colored square at a ground point (used when zoomed far out)
+function dot(gx: number, gy: number, c: string) {
+  const [sx, sy] = iso(gx, 0, gy)
+  X.fillStyle = c
+  X.fillRect(sx - 2, sy - 2, 4, 4)
+}
+
+
+// a miner with no live crystal in mining range is "starved" (shown by recoloring its
+// green part purple + a purple origin glow instead of the green mining laser).
+const starved = (b: { x: number; y: number }) =>
+  !S.nodes.some((n) => n.amt > 0 && (n.x - b.x) ** 2 + (n.y - b.y) ** 2 < MINE_RANGE ** 2)
+
 const GPAT = makeGround(X) // procedural tileable dirt texture
-const GTS = GROUND_TILE
 // offscreen buffer the fog-of-war pass is composited on (see render)
 const FC = FOG ? document.createElement('canvas') : (0 as never)
 const FX = FOG ? FC.getContext('2d')! : (0 as never)
@@ -241,37 +261,59 @@ export function render() {
     if (b.bp != null)
       chunkRing(b.x, b.y, R[b.t] + 5, BUILD[b.t], BUILD[b.t] - b.bp)
   if (S.selN && S.selN.amt > 0)
-    groundRing(S.selN.x, S.selN.y, R[S.selN.k] + 1, '#fff', 1, 6)
+    entityOutline(ENTITIES[S.selN.k], S.selN.x, S.selN.y, S.selN.ds || 1, '#fff')
 
-  // cast drop shadows: collect every silhouette into ONE path, then fill once so
-  // overlapping shadows merge into a single flat region (no darker overlaps).
-  X.fillStyle = '#000'
-  X.globalAlpha = LT.shAlpha + 0.06 * SUN.up
-  X.beginPath()
-  for (const n of nodes)
-    if ((n.ds || 0) > 0.02) addShadow(ENTITIES[n.k], n.x, n.y, n.ds!)
-  for (const b of buildings)
-    if (b.bp == null) addShadow(ENTITIES[b.t], b.x, b.y, 1)
-  for (const e of enemies) addShadow(ENTITIES.E, e.x, e.y, 1)
-  X.fill('nonzero') // nonzero winding: overlaps count as inside, filled uniformly
-  X.globalAlpha = 1
+  // Two levers keep the frame cheap with hundreds of entities:
+  //  - viewport cull (onScreen): off-screen entities are skipped everywhere.
+  //  - LOD dots: when zoomed far out, everything draws as a flat colored dot instead of a
+  //    3D mesh, and shadows are skipped — a lathed mesh + shade() + global depth-sort per
+  //    entity is wasted when each is only a few pixels.
+  const DOTS = S.ZOOM < LOD_ZOOM
+  if (DOTS) {
+    // map-legend dot colors by building type (distinct from the 3D model palette COL)
+    for (const n of nodes)
+      if ((n.ds || 0) > 0.02 && onScreen(n)) dot(n.x, n.y, '#0ff') // crystals: cyan
+    for (const b of buildings)
+      if (b.bp == null && onScreen(b))
+        dot(b.x, b.y, b.t === 'S' ? '#a4f' : b.t === 'L' ? '#ff4' : b.t === 'M' ? '#4f8' : '#F84')
+    for (const e of enemies)
+      if (onScreen(e)) dot(e.x, e.y, '#f00')
+  } else {
+    // cast drop shadows: collect every silhouette into ONE path, then fill once so
+    // overlapping shadows merge into a single flat region (no darker overlaps).
+    X.fillStyle = '#000'
+    X.globalAlpha = LT.shAlpha + 0.06 * SUN.up
+    X.beginPath()
+    for (const n of nodes)
+      if ((n.ds || 0) > 0.02 && onScreen(n)) addShadow(ENTITIES[n.k], n.x, n.y, n.ds!)
+    for (const b of buildings)
+      if (b.bp == null && onScreen(b)) addShadow(ENTITIES[b.t], b.x, b.y, 1)
+    for (const e of enemies)
+      if (onScreen(e)) addShadow(ENTITIES.E, e.x, e.y, 1)
+    X.fill('nonzero') // nonzero winding: overlaps count as inside, filled uniformly
+    X.globalAlpha = 1
 
-  // collect faces (skip under-construction buildings — those draw at half opacity)
-  const faces: Face[] = []
-  for (const n of nodes)
-    if ((n.ds || 0) > 0.02) entityFaces(ENTITIES[n.k], n.x, n.y, n.ds!, faces)
-  for (const b of buildings)
-    if (b.bp == null) entityFaces(ENTITIES[b.t], b.x, b.y, 1, faces)
-  for (const e of enemies) entityFaces(ENTITIES.E, e.x, e.y, 1, faces)
-  faces.sort((a, b) => a.d - b.d)
-  for (const f of faces) fillFace(f)
+    // collect faces (skip under-construction buildings — those draw at half opacity)
+    const faces: Face[] = []
+    for (const n of nodes)
+      if ((n.ds || 0) > 0.02 && onScreen(n)) entityFaces(ENTITIES[n.k], n.x, n.y, n.ds!, faces)
+    for (const b of buildings)
+      if (b.bp == null && onScreen(b))
+        entityFaces(ENTITIES[b.t], b.x, b.y, 1, faces, undefined, b.t === 'M' && starved(b) ? '#a4f' : undefined)
+    for (const e of enemies)
+      if (onScreen(e)) entityFaces(ENTITIES.E, e.x, e.y, 1, faces)
+    faces.sort((a, b) => a.d - b.d)
+    for (const f of faces) fillFace(f)
+  }
 
   // under-construction buildings: draw a white silhouette outline (the model itself
   // stays invisible; the chunk ring shows build progress on the ground)
-  for (const b of buildings)
-    if (b.bp != null) entityOutline(ENTITIES[b.t], b.x, b.y, 1, '#fff')
-  // selected building: white silhouette outline on top of its (already-drawn) model
-  if (S.sel && S.sel.bp == null) entityOutline(ENTITIES[S.sel.t], S.sel.x, S.sel.y, 1, '#fff')
+  if (!DOTS) {
+    for (const b of buildings)
+      if (b.bp != null && onScreen(b)) entityOutline(ENTITIES[b.t], b.x, b.y, 1, '#fff')
+    // selected building: white silhouette outline on top of its (already-drawn) model
+    if (S.sel && S.sel.bp == null) entityOutline(ENTITIES[S.sel.t], S.sel.x, S.sel.y, 1, '#fff')
+  }
 
   // build-mode placement preview: translucent model + range ring under the cursor
   if (S.mode === 'build' && S.mouse) {
@@ -397,14 +439,19 @@ export function render() {
   // A green glow (same soft radial style as energy pulses) pulses at the laser origin.
   X.strokeStyle = '#4f8' // miner green (COL.M)
   for (const b of buildings)
-    if (b.t === 'M' && b.mn) {
-      const mp = b.mp || 0
-      const a = Math.max(0, Math.min(1, Math.min(mp, 1 - mp) / 0.3)) // shared fade
-      const [ax, ay] = g(b.x, b.y, 16),
-        [bx, by] = g(b.mn.x, b.mn.y, 6)
-      glow(ax, ay, '80,255,150', a) // origin glow
-      X.globalAlpha = a // beam
-      beam(ax, ay, bx, by)
+    if (b.t === 'M' && b.bp == null) {
+      const [ax, ay] = g(b.x, b.y, 16)
+      if (b.mn) {
+        const mp = b.mp || 0
+        const a = Math.max(0, Math.min(1, Math.min(mp, 1 - mp) / 0.3)) // shared fade
+        const [bx, by] = g(b.mn.x, b.mn.y, 6)
+        glow(ax, ay, '80,255,150', a) // origin glow
+        X.globalAlpha = a // beam
+        beam(ax, ay, bx, by)
+      } else if (starved(b)) {
+        // idle with no reachable crystal: pulse a purple "starved" glow at the origin
+        glow(ax, ay, '180,110,255')
+      }
     }
   X.globalAlpha = 1
   X.lineWidth = 1

@@ -63,12 +63,12 @@ export const LT = ((globalThis as any).LT ||= {
   shLean: 1.5, // horizontal spread of the shadow
   shLen: 1.5, // how much longer shadows get as the sun lowers
   shAlpha: 0.2, // base shadow opacity
-  // resource crystal patch generation (read by reset() in game.ts)
-  patchDensity: 0.000015, // patches per square world unit
+  // resource crystal patch generation (sunflower layout, read by reset() in game.ts)
+  patchN: 150, // total number of patches in the world
+  patchSpacing: 90, // base ring spacing; actual radius = spacing·i^0.7 (spreads with distance)
   patchMin: 3, // fewest crystals per patch
   patchMax: 6, // most crystals per patch
   patchSpread: 105, // scatter radius around each patch center
-  patchGap: 200, // min distance between patch centers
 })
 
 // Derived sun state, recomputed each frame from LT.dayT by computeSun().

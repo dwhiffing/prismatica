@@ -28,18 +28,19 @@ function hop(from: Pt, to: Building, hb: number) {
   S.pulses.push({ x: from.x, y: from.y, tx: to.x, ty: to.y, p: 0, len, dst: to, hb })
 }
 
-// a neighbour that can receive a relayed unit: anything that keeps energy
-// (consumers + under-construction buildings) or forwards it (finished links).
-// excludes finished solars (they emit, never receive).
-const canReceive = (o: Building) => o.t !== 'S' || building(o)
+// a neighbour that can receive a relayed unit: a link (forwards when done, builds while
+// under construction) or anything that still WANTS a unit. This excludes full miners/towers
+// and finished solars, so surplus energy is never sent to them in the first place.
+const canReceive = (o: Building) => o.t === 'L' || wants(o)
 // relay a unit onward FROM `node`: cycle through its in-range neighbours (round
 // robin via ni) and hop to the next one. `hb` is the remaining hop budget; energy
 // dissipates at 0.
 function relay(node: Building, hb: number) {
   if (hb <= 0) return
-  // forced route (set via 'z') always wins, as long as the target is alive & in range
+  // forced route (set via 'z') always wins, as long as the target is alive, in range,
+  // and can actually receive (never route energy into a finished solar — it only emits)
   const rt = node.route
-  if (rt && S.buildings.includes(rt) && near(node, rt, LINK_RANGE)) {
+  if (rt && S.buildings.includes(rt) && canReceive(rt) && near(node, rt, LINK_RANGE)) {
     hop(node, rt, hb - 1)
     return
   }
@@ -199,9 +200,12 @@ export function stepSim(dt: number) {
   for (const p of S.pulses) {
     p.p += (dt * PSPEED) / (p.len || 1)
     if (p.p >= 1 && p.dst) {
-      if (wants(p.dst)) feed(p.dst) // consumer keeps it (or it builds the building)
-      else if (p.dst.t === 'L' && !building(p.dst)) relay(p.dst, p.hb) // only a finished LINK forwards
-      // else: a full/unwilling consumer just drops it (consumers never bounce energy on)
+      const d = p.dst
+      if (wants(d)) feed(d) // consumer keeps it (or it builds the building)
+      // otherwise it's a finished link (forward), or a miner/tower that filled up while the
+      // pulse was in flight — either way bounce the surplus onward. finished solars are
+      // never targeted (canReceive excludes them), so no type check needed.
+      else if (!building(d)) relay(d, p.hb)
       p.dst = null as unknown as Building // handled once
     }
   }

@@ -24,9 +24,7 @@ export function rnd() {
   return Math.random()
 }
 export function dist2(a: Pt, b: Pt) {
-  const dx = a.x - b.x,
-    dy = a.y - b.y
-  return dx * dx + dy * dy
+  return (a.x - b.x) ** 2 + (a.y - b.y) ** 2
 }
 export function near(a: Pt, b: Pt, r: number) {
   return dist2(a, b) < r * r
