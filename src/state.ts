@@ -21,6 +21,8 @@ export const S = {
   nodes: [] as ResNode[],
   enemies: [] as Enemy[],
   pulses: [] as Pulse[],
+  // generic particles: [x, y, vx, vy, life, "r,g,b"] in world space; life 1 -> 0 as it fades
+  parts: [] as [number, number, number, number, number, string][],
   resource: 0,
   rps: 0, // resources per second earned by active miners (HUD readout)
   tool: 'S' as BType,

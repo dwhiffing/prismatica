@@ -20,6 +20,16 @@ function feed(o: Building) {
   else o.e += 1
 }
 
+// spawn `n` particles at (x,y) flying out in random directions at up to `spd`
+// world-units/sec, tinted "r,g,b" `col`. Generic — reuse for any burst (mining, hits,
+// explosions) by varying n / spd / col.
+export function spawnParts(x: number, y: number, n: number, spd: number, col: string) {
+  for (let i = 0; i < n; i++) {
+    const a = rnd() * Math.PI * 2, s = spd * (0.5 + rnd() * 0.5)
+    S.parts.push([x, y, Math.cos(a) * s, Math.sin(a) * s, 1, col])
+  }
+}
+
 // spawn a pulse from `from` to `to`.
 function hop(from: Pt, to: Building) {
   const len = Math.hypot(to.x - from.x, to.y - from.y)
@@ -152,8 +162,13 @@ export function stepSim(dt: number) {
       b.mn.amt -= take * 3
       S.resource += take
       S.rps += 1 // this miner is actively earning 1/sec this frame
-      b.mp = (b.mp || 0) + dt
-      if (b.mp >= 1) {
+      const mp = (b.mp || 0) + dt
+      b.mp = mp
+      // spawn mining sparks off the crystal, but ONLY while the beam is near full (mp in
+      // the middle of the cut). Spawning during the fade-out tail would birth particles
+      // that then outlive the vanished beam — the "burst after the beam is gone".
+      if (mp > 0.15 && mp < 0.7 && rnd() < dt * 30) spawnParts(b.mn.x, b.mn.y, 1, 50, '80,255,150')
+      if (mp >= 1) {
         b.mn = null
         b.mp = 0.5
       }
@@ -210,4 +225,15 @@ export function stepSim(dt: number) {
     }
   }
   S.pulses = S.pulses.filter((p) => p.p < 1)
+
+  // particles drift outward, slow down (dt is capped so 1-dt*3 stays positive), and fade
+  for (const q of S.parts) {
+    const drag = 1 - dt * 3
+    q[0] += q[2] * dt
+    q[1] += q[3] * dt
+    q[2] *= drag
+    q[3] *= drag
+    q[4] -= dt * 4
+  }
+  S.parts = S.parts.filter((q) => q[4] > 0)
 }

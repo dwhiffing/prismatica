@@ -377,14 +377,16 @@ export function render() {
   X.lineWidth = 1
 
   const rad = 7 * S.ZOOM // glow radius (shared by chain beams, energy pulses, miner lasers)
-  // soft radial glow at screen (ax,ay): `c` is the "r,g,b" body, `k` scales opacity.
-  const glow = (ax: number, ay: number, c: string, k = 1) => {
-    const grd = X.createRadialGradient(ax, ay, 0, ax, ay, rad)
-    grd.addColorStop(0, `rgba(${c},${0.9 * k})`)
-    grd.addColorStop(0.3, `rgba(${c},${0.25 * k})`)
+  // soft radial glow at screen (ax,ay): `c` is the "r,g,b" body, `k` scales opacity,
+  // `sc` scales the radius.
+  const glow = (ax: number, ay: number, c: string, k = 1, sc = 1) => {
+    const r = rad * sc
+    const grd = X.createRadialGradient(ax, ay, 0, ax, ay, r)
+    grd.addColorStop(0, `rgba(${c},${0.7 * k})`)
+    grd.addColorStop(0.2, `rgba(${c},${0.2 * k})`)
     grd.addColorStop(1, `rgba(${c},0)`)
     X.fillStyle = grd
-    X.fillRect(ax - rad, ay - rad, rad * 2, rad * 2)
+    X.fillRect(ax - r, ay - r, r * 2, r * 2)
   }
 
   // laser-chain lines: a red beam tower->tower along each chain link. When the chain's
@@ -446,6 +448,7 @@ export function render() {
         const a = Math.max(0, Math.min(1, Math.min(mp, 1 - mp) / 0.3)) // shared fade
         const [bx, by] = g(b.mn.x, b.mn.y, 6)
         glow(ax, ay, '80,255,150', a) // origin glow
+        glow(bx, by, '80,255,150', a, 0.8) // impact glow at the crystal (half size)
         X.globalAlpha = a // beam
         beam(ax, ay, bx, by)
       } else if (starved(b)) {
@@ -453,6 +456,11 @@ export function render() {
         glow(ax, ay, '180,110,255')
       }
     }
+  // generic particles: little glows fading as they fly out (mining sparks, etc.)
+  for (const q of S.parts) {
+    const [sx, sy] = g(q[0], q[1], 6)
+    glow(sx, sy, q[5], q[4], 0.5)
+  }
   X.globalAlpha = 1
   X.lineWidth = 1
 

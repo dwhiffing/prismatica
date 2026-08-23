@@ -59,7 +59,7 @@ function spawnPatch(cx: number, cy: number) {
 }
 
 function reset() {
-  S.enemies = []; S.pulses = []; S.resource = 70; S.t = 0; S.spawnT = 0; S.revealed = []
+  S.enemies = []; S.pulses = []; S.parts = []; S.resource = 70; S.t = 0; S.spawnT = 0; S.revealed = []
   SPAWN.x = V.W / 2; SPAWN.y = V.Hh / 2; S.camX = SPAWN.x; S.camY = SPAWN.y
   S.buildings = [mkB('S', SPAWN.x - 35, SPAWN.y), mkB('S', SPAWN.x + 35, SPAWN.y),
     ...[0, 1, 2].map((i) => { const a = -Math.PI / 2 + (i * Math.PI * 2) / 3; return mkB('L', SPAWN.x + Math.cos(a) * 22, SPAWN.y + Math.sin(a) * 22) })]
