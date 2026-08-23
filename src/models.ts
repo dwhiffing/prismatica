@@ -5,10 +5,10 @@
 //  (a lathe profile) + a material, placed by offset/rotation/scale.
 // ============================================================
 export type V3 = [number, number, number]
-export type EType = 'S' | 'L' | 'M' | 'T' | 'N' | 'N2' | 'N3' | 'E'
+export type EType = 'S' | 'L' | 'M' | 'T' | 'rockLarge' | 'rockMedium' | 'rockSmall' | 'crystalR' | 'crystalG' | 'crystalB' | 'E'
 
 export interface Geo { profile: [number, number][]; seg: number }
-export interface Material { col: string; amb: number; dif: number }
+export interface Material { col: string; amb: number; dif: number; a?: number }
 export interface Spline {
   geo: Geo
   mat: Material
@@ -18,14 +18,13 @@ export interface Spline {
 }
 export interface Entity { name: string; splines: Spline[] }
 
-export const COL: Record<EType, string> = {
-  S: '#fd4', L: '#4cf', M: '#4f8', T: '#f66', N: '#c9f', N2: '#c9f', N3: '#c9f', E: '#f2a',
-}
-
 const sp = (
   profile: [number, number][], seg: number, col: string,
-  off: V3 = [0, 0, 0], rot: V3 = [0, 0, 0], scl = 1, amb = 0.3, dif = 0.59,
-): Spline => ({ geo: { profile, seg }, mat: { col, amb, dif }, off, rot, scl })
+  off: V3 = [0, 0, 0], rot: V3 = [0, 0, 0], scl = 1, amb = 0.3, dif = 0.59, a = 1,
+): Spline => ({ geo: { profile, seg }, mat: { col, amb, dif, a }, off, rot, scl })
+
+// shared crystal profile — the RGB color crystals are identical but for their tint
+const CRY: [number, number][] = [[3.5, 0], [4.5, 14.5], [0, 21]]
 
 export const ENTITIES: Record<EType, Entity> = {
   S: { name: 'solar', splines: [
@@ -46,18 +45,21 @@ export const ENTITIES: Record<EType, Entity> = {
   T: { name: 'tower', splines: [
     sp([[0, 0], [6, 0], [2, 8], [2, 22], [0, 22]], 4, '#66bdff', [0, 0, 0], [0, 0, 0], 1, 0.3, 0.59),
   ] },
-  N: { name: 'crystal', splines: [
+  rockLarge: { name: 'rock-large', splines: [
     sp([[0, 0], [4.5, 3], [4.5, 8.5], [0, 11.5]], 6, '#afb295', [-3.5, 1, -2.5], [0.8, 0, -1], 1.15, 0.3, 0.59),
     sp([[0, 0], [1.5, 0], [2.5, 3], [0, 4.5]], 5, '#afb295', [5.5, 0, -3.5], [0, 0.1, 0], 1, 0.3, 0.59),
     sp([[0, 0], [1.5, 0], [2, 2.5], [0, 4]], 3, '#afb295', [0, 0, -4.5], [0, 0.6, 0.2], 0.55, 0.3, 0.59),
   ] },
-  N2: { name: 'crystal-med', splines: [
+  rockMedium: { name: 'rock-medium', splines: [
     sp([[0, 0], [1, 0], [1.5, 1.5], [0, 4]], 5, '#afb295', [-4, 0, 0], [0, 0, 0], 1.1, 0.3, 0.59),
     sp([[0, 0], [3, 0], [2.5, 7.5], [0, 9.5]], 6, '#afb295', [1, -1, 0], [0, 0.4, 0], 1.2, 0.3, 0.59),
   ] },
-  N3: { name: 'crystal-small', splines: [
+  rockSmall: { name: 'rock-small', splines: [
     sp([[2, 0], [2.5, 3], [0, 4]], 7, '#afb295', [0, 1, 0], [0, 0, 1.6], 1, 0.3, 0.59),
   ] },
+  crystalR: { name: 'crystal-r', splines: [sp(CRY, 5, '#ff5555',[0,0,0],[0,0,0],1,1,.5,0.7)] },
+  crystalG: { name: 'crystal-g', splines: [sp(CRY, 5, '#55ff55',[0,0,0],[0,0,0],1,1,.5,0.7)] },
+  crystalB: { name: 'crystal-b', splines: [sp(CRY, 5, '#5555ff',[0,0,0],[0,0,0],1,1,.5,0.7)] },
   E: { name: 'enemy', splines: [
     sp([[4, 12], [0, 14]], 16, '#ff243a', [0, -2, 0], [0, 0, 0], 1, 0.3, 0.59),
     sp([[5, 11], [4, 12]], 16, '#560101', [0, -2, 0], [0, 0, 0], 1, 0.3, 0.59),

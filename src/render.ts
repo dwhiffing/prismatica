@@ -80,6 +80,7 @@ function entityFaces(
         v: wv,
         c: shade(col, n, sp.mat.amb, sp.mat.dif),
         d: depth(cx, cy, cz),
+        a: sp.mat.a,
       })
     }
   }
@@ -87,6 +88,7 @@ function entityFaces(
 
 function fillFace(f: Face) {
   X.fillStyle = f.c
+  X.globalAlpha = f.a! // 1 for opaque materials, <1 for translucent (crystals)
   X.beginPath()
   tp(f.v.map(v => iso(v[0], v[1], v[2])))
   X.fill()
@@ -289,7 +291,7 @@ export function render() {
     for (const n of nodes)
       if ((n.ds || 0) > 0.02 && onScreen(n)) addShadow(ENTITIES[n.k], n.x, n.y, n.ds!)
     for (const b of buildings)
-      if (b.bp == null && onScreen(b)) addShadow(ENTITIES[b.t], b.x, b.y, 1)
+      if (b.bp == null && onScreen(b)) addShadow(ENTITIES[b.ek ?? b.t], b.x, b.y, 1)
     for (const e of enemies)
       if (onScreen(e)) addShadow(ENTITIES.E, e.x, e.y, 1)
     X.fill('nonzero') // nonzero winding: overlaps count as inside, filled uniformly
@@ -301,22 +303,23 @@ export function render() {
       if ((n.ds || 0) > 0.02 && onScreen(n)) entityFaces(ENTITIES[n.k], n.x, n.y, n.ds!, faces, undefined, undefined, n.ry)
     for (const b of buildings)
       if (b.bp == null && onScreen(b))
-        entityFaces(ENTITIES[b.t], b.x, b.y, 1, faces,
+        entityFaces(ENTITIES[b.ek ?? b.t], b.x, b.y, 1, faces,
           b.load! > LINK_MAX ? '#f33' : undefined, // overloaded link: red
           b.t === 'M' && starved(b) ? '#a4f' : undefined)
     for (const e of enemies)
       if (onScreen(e)) entityFaces(ENTITIES.E, e.x, e.y, 1, faces)
     faces.sort((a, b) => a.d - b.d)
     for (const f of faces) fillFace(f)
+    X.globalAlpha = 1 // reset after translucent (crystal) faces
   }
 
   // under-construction buildings: draw a white silhouette outline (the model itself
   // stays invisible; the chunk ring shows build progress on the ground)
   if (!DOTS) {
     for (const b of buildings)
-      if (b.bp != null && onScreen(b)) entityOutline(ENTITIES[b.t], b.x, b.y, 1, '#fff')
+      if (b.bp != null && onScreen(b)) entityOutline(ENTITIES[b.ek ?? b.t], b.x, b.y, 1, '#fff')
     // selected building: white silhouette outline on top of its (already-drawn) model
-    if (S.sel && S.sel.bp == null) entityOutline(ENTITIES[S.sel.t], S.sel.x, S.sel.y, 1, '#fff')
+    if (S.sel && S.sel.bp == null) entityOutline(ENTITIES[S.sel.ek ?? S.sel.t], S.sel.x, S.sel.y, 1, '#fff')
   }
 
   // build-mode placement preview: translucent model + range ring under the cursor
@@ -386,8 +389,8 @@ export function render() {
   const glow = (ax: number, ay: number, c: string, k = 1, sc = 1) => {
     const r = rad * sc
     const grd = X.createRadialGradient(ax, ay, 0, ax, ay, r)
-    grd.addColorStop(0, `rgba(${c},${0.7 * k})`)
-    grd.addColorStop(0.2, `rgba(${c},${0.2 * k})`)
+    grd.addColorStop(0, `rgba(${c},${k})`)
+    grd.addColorStop(0.23, `rgba(${c},${0.2 * k})`)
     grd.addColorStop(1, `rgba(${c},0)`)
     X.fillStyle = grd
     X.fillRect(ax - r, ay - r, r * 2, r * 2)
@@ -424,11 +427,23 @@ export function render() {
   X.lineCap = 'butt'
   X.lineWidth = 1
 
-  // energy pulses: soft glowing orbs (radial gradient fading to transparent)
+  // energy pulses: colored glowing orbs — color encodes the energy's RGB bitmask.
+  // Index 0 = uncolored (warm dim white), 1-7 = B/G/GB/R/RB/RG/RGB via bitmask.
+  const PCOLS = [
+    ['255,238,140', 1, 0.5], // 0: uncolored
+    ['20,90,255', 1, 1],     // 1: B
+    ['62,255,62', 1, 1],     // 2: G
+    ['0,255,255', 1, 1],     // 3: GB/cyan
+    ['255,62,62', 1, 1],     // 4: R
+    ['255,0,255', 1, 1],     // 5: RB/magenta
+    ['255,255,0', 1, 1],     // 6: RG/yellow
+    ['255,255,255', 1, 1],   // 7: RGB/white
+  ] as const
   for (const p of pulses) {
     const x = p.x + (p.tx - p.x) * p.p, y = p.y + (p.ty - p.y) * p.p
     const [sx, sy] = g(x, y, 8)
-    glow(sx, sy, '255,238,120')
+    const [c, k, sc] = PCOLS[p.col & 7]
+    glow(sx, sy, c, k, sc)
   }
 
   // tower beams: the head fires at an enemy, with a glow at the tower origin
@@ -479,7 +494,7 @@ export function render() {
     // reveals are stored in WORLD space and re-projected, they stay put through pan/zoom and
     // survive the building being destroyed. REVEAL is a world distance, so scale by zoom.
     for (const b of buildings)
-      if (b.bp == null && !b.rv) { b.rv = true; S.revealed.push({ x: b.x, y: b.y }) }
+      if (b.bp == null && !b.rv && !b.crystalCol) { b.rv = true; S.revealed.push({ x: b.x, y: b.y }) }
     if (FC.width !== V.W || FC.height !== V.Hh) { FC.width = V.W; FC.height = V.Hh }
     FX.clearRect(0, 0, V.W, V.Hh)
     FX.fillStyle = '#000'

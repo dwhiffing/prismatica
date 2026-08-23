@@ -30,31 +30,29 @@ export function spawnParts(x: number, y: number, n: number, spd: number, col: st
   }
 }
 
-// spawn a pulse from `from` to `to`.
-function hop(from: Pt, to: Building) {
+// spawn a pulse from `from` to `to`, carrying an energy color.
+function hop(from: Pt, to: Building, col = 0) {
   const len = Math.hypot(to.x - from.x, to.y - from.y)
-  S.pulses.push({ x: from.x, y: from.y, tx: to.x, ty: to.y, p: 0, len, dst: to })
+  S.pulses.push({ x: from.x, y: from.y, tx: to.x, ty: to.y, p: 0, len, dst: to, col })
 }
 
 // a neighbour that can receive a relayed unit: a link (forwards when done, builds while
 // under construction) or anything that still WANTS a unit. This excludes full miners/towers
 // and finished solars, so surplus energy is never sent to them in the first place.
 const canReceive = (o: Building) => o.t === 'L' || wants(o)
-// relay a unit onward FROM `node`: cycle through its in-range neighbours (round robin
-// via ni) and hop to the next one. No hop budget — a unit relays until something consumes
-// it, so energy is never lost to bouncing around (it only stops at a dead-end node).
-function relay(node: Building) {
+// relay a unit onward FROM `node`, preserving its energy color.
+function relay(node: Building, col = 0) {
   // forced route (set via 'z') always wins, as long as the target is alive, in range,
   // and can actually receive (never route energy into a finished solar — it only emits)
   const rt = node.route
   if (rt && S.buildings.includes(rt) && canReceive(rt) && near(node, rt, LINK_RANGE)) {
-    hop(node, rt)
+    hop(node, rt, col)
     return
   }
   const ns = S.buildings.filter((o) => o !== node && canReceive(o) && near(node, o, LINK_RANGE))
   if (!ns.length) return
   node.ni = ((node.ni || 0) + 1) % ns.length
-  hop(node, ns[node.ni])
+  hop(node, ns[node.ni], col)
 }
 
 const validChain = (a: Building) =>
@@ -108,7 +106,9 @@ function tick() {
 }
 
 function pickTarget(): Building | null {
-  return S.buildings.length ? S.buildings[(rnd() * S.buildings.length) | 0] : null
+  // color crystals (crystalCol set) are indestructible world fixtures — never target them
+  const ts = S.buildings.filter((b) => !b.crystalCol)
+  return ts.length ? ts[(rnd() * ts.length) | 0] : null
 }
 
 let acc = 0 // fixed-timestep accumulator for the 1s tick
@@ -204,22 +204,29 @@ export function stepSim(dt: number) {
   }
   S.buildings = S.buildings.filter((b) => b.hp > 0)
 
-  // pulses travel at constant world-speed. On arrival at dst: if it wants the unit,
-  // keep it; otherwise relay onward (or dissipate).
+  // pulses travel at constant world-speed. On arrival at dst: color crystals tint the
+  // energy (OR their color bit in) then relay; consumers keep it; links forward it.
   for (const p of S.pulses) {
     p.p += (dt * PSPEED) / (p.len || 1)
     if (p.p >= 1 && p.dst) {
       const d = p.dst
-      if (wants(d)) feed(d) // consumer keeps it (or it builds the building)
+      const inCol = p.col
+      if (d.crystalCol != null) {
+        // color crystal: OR in the crystal's color bit (same color twice is a no-op by OR),
+        // then relay onward. Subject to the same overload cap as regular links.
+        if ((d.load = (d.load || 0) + 1) <= LINK_MAX)
+          relay(d, inCol | d.crystalCol)
+      } else if (wants(d)) {
+        feed(d) // consumer keeps it (or it builds the building)
       // otherwise it's a finished link (forward), or a miner/tower that filled up while the
       // pulse was in flight — bounce the surplus onward. finished solars are never targeted
       // (canReceive excludes them), so no type check needed.
-      else if (!building(d)) {
+      } else if (!building(d)) {
         // links overload: count energy passing through this second. Once a link exceeds
         // LINK_MAX it turns red (hot) and BURNS the excess instead of relaying — a sink so
         // energy that never lands doesn't circulate forever.
         if (d.t === 'L' && (d.load = (d.load || 0) + 1) > LINK_MAX) continue // over cap: burn it
-        relay(d)
+        relay(d, inCol) // carry color through regular links
       }
       p.dst = null as unknown as Building // handled once
     }

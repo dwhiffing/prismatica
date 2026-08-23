@@ -27,11 +27,13 @@ export interface Building extends Pt {
   rv?: boolean // fog: this finished building has been recorded into S.revealed
   load?: number // link: energy units passed through this second (reset each tick); over
   // LINK_MAX it overloads — excess is burned and the link draws red until the next reset
+  crystalCol?: number // if set: world color crystal; ORs this color bit into passing energy (4=R,2=G,1=B)
+  ek?: EType // entity model override (used by color crystals to render a crystal instead of link)
 }
 export interface ResNode extends Pt {
   amt: number // resources remaining
   cap: number // full resource capacity (amt at spawn)
-  k: EType // which crystal model: 'N' (large), 'N2' (medium), 'N3' (small)
+  k: EType // which rock model: 'rockLarge', 'rockMedium', 'rockSmall'
   ds?: number // displayed scale 0..1, eases toward amt/cap (smooth shrink as depleted)
   ry?: number // random Y rotation (radians) so crystals don't all face the same way
 }
@@ -47,8 +49,9 @@ export interface Pulse {
   p: number // 0..1 progress along the hop
   len: number // world length of the hop (for constant-speed travel)
   dst: Building // the node this pulse is arriving at (routed further, or consumed)
+  col: number // energy color bitmask (4=R,2=G,1=B; 0=uncolored)
 }
 
 // --- render types ---
-export type Face = { v: V3[]; c: string; d: number } // world verts, color, depth key
+export type Face = { v: V3[]; c: string; d: number; a?: number } // world verts, color, depth key, alpha
 export type Mesh = { faces: [number, number, number, number][]; verts: V3[] }

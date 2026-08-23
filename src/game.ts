@@ -54,8 +54,7 @@ function spawnPatch(cx: number, cy: number) {
     const x = cx + r(), y = cy + r()
     if (S.buildings.some((b) => (b.x - x) ** 2 + (b.y - y) ** 2 < (R[b.t] + R[k]) ** 2)) continue
     if (S.nodes.some((n) => n.amt > 0 && (n.x - x) ** 2 + (n.y - y) ** 2 < (R[n.k] + R[k]) ** 2)) continue
-    const ry = Math.floor((-0.75 + rnd() * 1.5) * 20) / 20
-    S.nodes.push({ x, y, amt: cap, cap, k, ds: 1, ry })
+    S.nodes.push({ x, y, amt: cap, cap, k, ds: 1, ry: (rnd() - 0.5) * 1.5 })
   }
 }
 
