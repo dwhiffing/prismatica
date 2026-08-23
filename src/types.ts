@@ -25,6 +25,8 @@ export interface Building extends Pt {
   route?: Building | null // forced relay target (set via 'z'); overrides round-robin
   chain?: Building | null // tower: next tower in the laser chain (set via 'z')
   rv?: boolean // fog: this finished building has been recorded into S.revealed
+  load?: number // link: energy units passed through this second (reset each tick); over
+  // LINK_MAX it overloads — excess is burned and the link draws red until the next reset
 }
 export interface ResNode extends Pt {
   amt: number // resources remaining
@@ -44,7 +46,6 @@ export interface Pulse {
   p: number // 0..1 progress along the hop
   len: number // world length of the hop (for constant-speed travel)
   dst: Building // the node this pulse is arriving at (routed further, or consumed)
-  hb: number // hops-remaining budget (energy dissipates when it runs out)
 }
 
 // --- render types ---

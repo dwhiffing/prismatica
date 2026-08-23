@@ -1,12 +1,10 @@
 // Simulation: energy routing, per-second tick, and the per-frame world update
 // (towers, miners, enemies, pulses). Pure logic — no drawing.
-import { CHAIN_DMG, CHAIN_RANGE, CHARGE, ENEMIES, ESPEED, LINK_RANGE, MINE_RANGE, PSPEED, R, TOWER_RANGE } from './constants'
+import { CHAIN_DMG, CHAIN_RANGE, CHARGE, ENEMIES, ESPEED, LINK_MAX, LINK_RANGE, MINE_RANGE, PSPEED, R, TOWER_RANGE } from './constants'
 import { near, rnd } from './core'
 import { S, SPAWN, V } from './state'
 import { drawUI } from './ui'
 import type { Building, Pt, ResNode } from './types'
-
-const HOPS = 12 // a unit of energy dissipates after this many relays without landing
 
 // is this building still under construction? (bp defined until the progress bar
 // finishes animating — bp===0 means paid but not yet visually complete)
@@ -22,37 +20,31 @@ function feed(o: Building) {
   else o.e += 1
 }
 
-// spawn a pulse from `from` to `to`, carrying a hop budget.
-function hop(from: Pt, to: Building, hb: number) {
+// spawn a pulse from `from` to `to`.
+function hop(from: Pt, to: Building) {
   const len = Math.hypot(to.x - from.x, to.y - from.y)
-  S.pulses.push({ x: from.x, y: from.y, tx: to.x, ty: to.y, p: 0, len, dst: to, hb })
+  S.pulses.push({ x: from.x, y: from.y, tx: to.x, ty: to.y, p: 0, len, dst: to })
 }
 
 // a neighbour that can receive a relayed unit: a link (forwards when done, builds while
 // under construction) or anything that still WANTS a unit. This excludes full miners/towers
 // and finished solars, so surplus energy is never sent to them in the first place.
 const canReceive = (o: Building) => o.t === 'L' || wants(o)
-// relay a unit onward FROM `node`: cycle through its in-range neighbours (round
-// robin via ni) and hop to the next one. `hb` is the remaining hop budget; energy
-// dissipates at 0.
-function relay(node: Building, hb: number) {
-  if (hb <= 0) return
+// relay a unit onward FROM `node`: cycle through its in-range neighbours (round robin
+// via ni) and hop to the next one. No hop budget — a unit relays until something consumes
+// it, so energy is never lost to bouncing around (it only stops at a dead-end node).
+function relay(node: Building) {
   // forced route (set via 'z') always wins, as long as the target is alive, in range,
   // and can actually receive (never route energy into a finished solar — it only emits)
   const rt = node.route
   if (rt && S.buildings.includes(rt) && canReceive(rt) && near(node, rt, LINK_RANGE)) {
-    hop(node, rt, hb - 1)
+    hop(node, rt)
     return
   }
   const ns = S.buildings.filter((o) => o !== node && canReceive(o) && near(node, o, LINK_RANGE))
   if (!ns.length) return
   node.ni = ((node.ni || 0) + 1) % ns.length
-  hop(node, ns[node.ni], hb - 1)
-}
-
-function emitEnergy() {
-  // every finished solar emits a unit into a neighbour (cycled round-robin)
-  for (const b of S.buildings) if (b.t === 'S' && !building(b)) relay(b, HOPS)
+  hop(node, ns[node.ni])
 }
 
 const validChain = (a: Building) =>
@@ -78,7 +70,9 @@ export const towerChainLen = (t: Building): number => {
 // Threat level = minutes elapsed (0 at start). During level L, exactly L enemies spawn,
 // spread evenly across that minute (nothing spawns at level 0).
 function tick() {
-  emitEnergy()
+  for (const b of S.buildings) b.load = 0 // reset per-second link throughput counters
+  // every finished solar emits a unit into a neighbour (cycled round-robin)
+  for (const b of S.buildings) if (b.t === 'S' && !building(b)) relay(b)
   const level = Math.floor(S.t / 60)
   if (level !== S.threat) {
     S.threat = level // new minute -> new level; reset this level's spawn counter
@@ -203,9 +197,15 @@ export function stepSim(dt: number) {
       const d = p.dst
       if (wants(d)) feed(d) // consumer keeps it (or it builds the building)
       // otherwise it's a finished link (forward), or a miner/tower that filled up while the
-      // pulse was in flight — either way bounce the surplus onward. finished solars are
-      // never targeted (canReceive excludes them), so no type check needed.
-      else if (!building(d)) relay(d, p.hb)
+      // pulse was in flight — bounce the surplus onward. finished solars are never targeted
+      // (canReceive excludes them), so no type check needed.
+      else if (!building(d)) {
+        // links overload: count energy passing through this second. Once a link exceeds
+        // LINK_MAX it turns red (hot) and BURNS the excess instead of relaying — a sink so
+        // energy that never lands doesn't circulate forever.
+        if (d.t === 'L' && (d.load = (d.load || 0) + 1) > LINK_MAX) continue // over cap: burn it
+        relay(d)
+      }
       p.dst = null as unknown as Building // handled once
     }
   }

@@ -3,6 +3,7 @@ import {
   BUILD,
   CHAIN_RANGE,
   COST,
+  LINK_MAX,
   LINK_RANGE,
   LOD_ZOOM,
   MINE_RANGE,
@@ -296,7 +297,9 @@ export function render() {
       if ((n.ds || 0) > 0.02 && onScreen(n)) entityFaces(ENTITIES[n.k], n.x, n.y, n.ds!, faces)
     for (const b of buildings)
       if (b.bp == null && onScreen(b))
-        entityFaces(ENTITIES[b.t], b.x, b.y, 1, faces, undefined, b.t === 'M' && starved(b) ? '#a4f' : undefined)
+        entityFaces(ENTITIES[b.t], b.x, b.y, 1, faces,
+          b.load! > LINK_MAX ? '#f33' : undefined, // overloaded link: red
+          b.t === 'M' && starved(b) ? '#a4f' : undefined)
     for (const e of enemies)
       if (onScreen(e)) entityFaces(ENTITIES.E, e.x, e.y, 1, faces)
     faces.sort((a, b) => a.d - b.d)

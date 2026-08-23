@@ -30,7 +30,8 @@ export const ENEMIES = true // master switch: set false to disable enemy spawns
 export const ESPEED = 10 // enemy speed px/s
 
 // --- energy routing ---
-export const PSPEED = 100 // energy pulse travel speed, world-units/sec (constant across hops)
+export const PSPEED = 50 // energy pulse travel speed, world-units/sec (constant across hops)
+export const LINK_MAX = 8 // energy a link can pass per second; excess overloads it (turns red, burned)
 
 // --- camera / projection ---
 export const ISO = 0.7 // vertical squash toward 1 = more overhead (0.5 = 2:1 dimetric)
