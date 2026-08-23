@@ -3,8 +3,8 @@
 import type { BType, EType, V3 } from './types'
 
 // --- gameplay ranges (world units) ---
-export const LINK_RANGE = 40 // energy transfer range — same for every energy building
-export const MINE_RANGE = 70 // miner -> resource node (green ring)
+export const LINK_RANGE = 50 // energy transfer range — same for every energy building
+export const MINE_RANGE = 30 // miner -> resource node (green ring)
 export const TOWER_RANGE = 112 // tower -> enemy base range (red ring). was 150, -25%
 // laser-chain bonuses: each extra tower in a chain adds this fraction of the base range
 // and this much flat damage to the chain HEAD (the tower that actually fires).
@@ -17,9 +17,9 @@ export const R: Record<EType, number> = {
   L: 4,
   M: 5,
   T: 6,
-  N: 8,
-  N2: 7,
-  N3: 6,
+  N: 6,
+  N2: 5,
+  N3: 4,
   E: 5,
 } // pick/collision radii
 export const COST: Record<BType, number> = { S: 30, L: 5, M: 20, T: 25 } // resource cost to place
@@ -31,7 +31,7 @@ export const ESPEED = 10 // enemy speed px/s
 
 // --- energy routing ---
 export const PSPEED = 50 // energy pulse travel speed, world-units/sec (constant across hops)
-export const LINK_MAX = 8 // energy a link can pass per second; excess overloads it (turns red, burned)
+export const LINK_MAX = 12 // energy a link can pass per second; excess overloads it (turns red, burned)
 
 // --- camera / projection ---
 export const ISO = 0.7 // vertical squash toward 1 = more overhead (0.5 = 2:1 dimetric)
@@ -49,4 +49,4 @@ export const REVEAL = 180
 export const C_NIGHT: V3 = [0.55, 0.62, 1.0] // cool moonlight (bright enough to read at night)
 export const C_GOLDEN: V3 = [1.0, 0.6, 0.32] // warm dawn/dusk
 export const C_NOON: V3 = [1.0, 0.98, 0.9] // bright neutral
-export const GROUND: V3 = [88, 58, 38] // base brown earth (rgb 0..255)
+export const GROUND: V3 = [77, 44, 24] // base brown earth (rgb 0..255)

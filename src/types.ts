@@ -33,6 +33,7 @@ export interface ResNode extends Pt {
   cap: number // full resource capacity (amt at spawn)
   k: EType // which crystal model: 'N' (large), 'N2' (medium), 'N3' (small)
   ds?: number // displayed scale 0..1, eases toward amt/cap (smooth shrink as depleted)
+  ry?: number // random Y rotation (radians) so crystals don't all face the same way
 }
 export interface Enemy extends Pt {
   hp: number

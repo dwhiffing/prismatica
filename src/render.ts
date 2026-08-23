@@ -40,18 +40,22 @@ function entityFaces(
   out: Face[],
   override?: string, // tint EVERY spline this color (blocked-placement preview)
   swapGreen?: string, // recolor only the miner's green (#4f8) spline (starved indicator)
+  yaw = 0, // whole-model rotation about Y (random per crystal so they don't all face alike)
 ) {
+  const yc = Math.cos(yaw), ys = Math.sin(yaw)
   for (const sp of ent.splines) {
     const m = meshOf(sp.geo)
     const col = override || (swapGreen && sp.mat.col === '#4f8' ? swapGreen : sp.mat.col)
     for (const f of m.faces) {
       const wv: V3[] = f.map((i) => {
         const lv = xv(m.verts[i], sp)
+        // local model-space point, then yaw it about Y before scale/translate to ground
+        const lx = lv[0] + sp.off[0], lz = lv[2] + sp.off[2]
         // entity scale s, drop onto ground; clamp y>=0 so sub-surface geometry is cut off
         return [
-          gx + (lv[0] + sp.off[0]) * s,
+          gx + (lx * yc - lz * ys) * s,
           Math.max(0, (lv[1] + sp.off[1]) * s),
-          gz + (lv[2] + sp.off[2]) * s,
+          gz + (lx * ys + lz * yc) * s,
         ] as V3
       })
       const ax = wv[1][0] - wv[0][0],
@@ -294,7 +298,7 @@ export function render() {
     // collect faces (skip under-construction buildings — those draw at half opacity)
     const faces: Face[] = []
     for (const n of nodes)
-      if ((n.ds || 0) > 0.02 && onScreen(n)) entityFaces(ENTITIES[n.k], n.x, n.y, n.ds!, faces)
+      if ((n.ds || 0) > 0.02 && onScreen(n)) entityFaces(ENTITIES[n.k], n.x, n.y, n.ds!, faces, undefined, undefined, n.ry)
     for (const b of buildings)
       if (b.bp == null && onScreen(b))
         entityFaces(ENTITIES[b.t], b.x, b.y, 1, faces,
@@ -442,7 +446,7 @@ export function render() {
   X.strokeStyle = '#4f8' // miner green (COL.M)
   for (const b of buildings)
     if (b.t === 'M' && b.bp == null) {
-      const [ax, ay] = g(b.x, b.y, 16)
+      const [ax, ay] = g(b.x, b.y, 13)
       if (b.mn) {
         const mp = b.mp || 0
         const a = Math.max(0, Math.min(1, Math.min(mp, 1 - mp) / 0.3)) // shared fade
