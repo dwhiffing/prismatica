@@ -1,7 +1,7 @@
 // ZzFX - Zuper Zmall Zound Zynth - Micro Edition
 // MIT License - Copyright 2019 Frank Force
 // https://github.com/KilledByAPixel/ZzFX
-import { clickSound, music } from './sounds'
+import { music } from './sounds'
 import { S } from './state'
 
 // This is a minified build of zzfx for use in size coding projects.
@@ -53,7 +53,6 @@ export const toggleMute = () => {
   S.muteState = (S.muteState + 1) % 3
   localStorage.m = S.muteState // persist across sessions
   zzfxV = S.muteState === 0 ? 0 : 0.3
-  if (S.muteState) zzfx(...clickSound) // audible feedback whenever sfx are on
   if (musicGain) musicGain.gain.value = S.muteState === 2 ? 1 : 0 // music only in "all sound"
 }
 

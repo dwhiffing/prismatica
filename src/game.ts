@@ -14,7 +14,7 @@ import { canPlace, near, nearest, rnd, unproject } from './core'
 import { computeSun } from './lighting'
 import { render } from './render'
 import { inMinimap, mmToWorld } from './minimap'
-import { clickSound } from './sounds'
+import { miscSounds } from './sounds'
 import { C, LT, resize, S, SPAWN, V } from './state'
 import { stepSim } from './sim'
 import { drawUI } from './ui'
@@ -38,7 +38,7 @@ addEventListener('keydown', startAudio)
 // build a Building record with the shared defaults (energy 0, hp 20, no cooldown)
 const mkB = (t: BType, x: number, y: number, bp?: number): Building => ({ t, x, y, e: 0, hp: 20, cd: 0, bp })
 
-const VARIANTS: [EType, number][] = [['N3', NODE_AMT * 0.35], ['N2', NODE_AMT * 0.65], ['N2', NODE_AMT * 0.65], ['N', NODE_AMT]]
+const VARIANTS: [EType, number][] = [['rockSmall', NODE_AMT * 0.35], ['rockMedium', NODE_AMT * 0.65], ['rockMedium', NODE_AMT * 0.65], ['rockLarge', NODE_AMT]]
 // sunflower (phyllotaxis) patch layout: patch i sits at angle i·GOLDEN and radius
 // spacing·i^0.7. The i^0.7 makes successive rings spread apart with distance, so clusters
 // thin out the further you get from spawn. Golden-angle rotation never self-overlaps, so
@@ -65,6 +65,12 @@ function reset() {
   S.buildings = [mkB('S', SPAWN.x - 35, SPAWN.y), mkB('S', SPAWN.x + 35, SPAWN.y),
     ...[0, 1, 2].map((i) => { const a = -Math.PI / 2 + (i * Math.PI * 2) / 3; return mkB('L', SPAWN.x + Math.cos(a) * 22, SPAWN.y + Math.sin(a) * 22) })]
   S.nodes = []
+  // spawn RGB color crystals equidistant from spawn; they act as world-fixed color links
+  for (let i = 0; i < 3; i++) {
+    const a = -Math.PI / 2 + (i * Math.PI * 2) / 3
+    const [crystalCol, ek] = ([[4, 'crystalR'], [2, 'crystalG'], [1, 'crystalB']] as [number, EType][])[i]
+    S.buildings.push({ ...mkB('L', SPAWN.x + Math.cos(a) * 65, SPAWN.y + Math.sin(a) * 65), crystalCol, ek, hp: 9999 })
+  }
   // lay the sunflower: patch 0 at spawn, each next one rotated by GOLDEN and pushed out
   // by spacing·i^0.7 (rings spread with distance → clusters thin out further from spawn).
   for (let i = 0; i < LT.patchN; i++) {
@@ -140,7 +146,7 @@ C.onpointerup = (e: PointerEvent) => {
   mmDrag = false
   C.releasePointerCapture?.(e.pointerId)
   if (didDrag) return
-  zzfx(...clickSound)
+  zzfx(...miscSounds[0])
   const p = unproject(mx(e), my(e))
   if (S.mode === 'build') {
     if (S.resource < COST[S.tool]) return
