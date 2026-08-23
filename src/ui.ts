@@ -30,7 +30,6 @@ H.onclick = (e: MouseEvent) => {
     S.tool = k as BType
     S.mode = 'build'
     S.sel = null
-    S.selN = null
   }
   drawUI()
 }

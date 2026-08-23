@@ -168,20 +168,8 @@ C.onpointerup = (e: PointerEvent) => {
       S.sel = tgt // select the new target; keep S.linking armed to chain
     }
   } else {
-    // select nearest building within pick radius; else nearest crystal node
+    // select nearest building within pick radius
     S.sel = nearest(p, () => true, 12 * 12)
-    S.selN = null
-    if (!S.sel) {
-      let bd = 26 * 26
-      for (const n of S.nodes)
-        if (n.amt > 0) {
-          const d = (n.x - p.x) ** 2 + (n.y - p.y) ** 2
-          if (d < bd) {
-            bd = d
-            S.selN = n
-          }
-        }
-    }
   }
 }
 C.onpointerleave = () => {
@@ -196,7 +184,6 @@ C.oncontextmenu = (e: MouseEvent) => {
   }
   S.mode = 'select'
   S.sel = null
-  S.selN = null
   drawUI()
 }
 
@@ -208,7 +195,7 @@ addEventListener('keydown', (e: KeyboardEvent) => {
   if (ti >= 0) {
     S.tool = (['S', 'L', 'M', 'T'] as BType[])[ti]
     S.mode = 'build'
-    S.sel = S.selN = null // deselect any building/node when starting a build
+    S.sel = null // deselect any building when starting a build
     S.linking = false
     drawUI()
     return

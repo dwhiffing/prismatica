@@ -247,7 +247,6 @@ export function render() {
   X.globalCompositeOperation = 'source-over'
 
   if (S.sel && !buildings.includes(S.sel)) S.sel = null // selection was destroyed
-  if (S.selN && S.selN.amt <= 0) S.selN = null // crystal depleted
 
   // range rings: only for the selected building (placement preview shows its own). A
   // selected tower shows its chain-enhanced firing range.
@@ -255,13 +254,11 @@ export function render() {
     const tR = S.sel.t === 'T' ? TOWER_RANGE * (1 + CHAIN_RANGE * (towerChainLen(S.sel) - 1)) : TOWER_RANGE
     drawRanges(S.sel.t, S.sel.x, S.sel.y, 0.5, tR)
   }
-  // construction progress ring (green chunks). The selected building's white
-  // silhouette outline is drawn later, on top of its model.
+  // construction progress ring (green chunks). Silhouette outlines (selected crystal +
+  // buildings) are drawn later, on top of their models.
   for (const b of buildings)
     if (b.bp != null)
       chunkRing(b.x, b.y, R[b.t] + 5, BUILD[b.t], BUILD[b.t] - b.bp)
-  if (S.selN && S.selN.amt > 0)
-    entityOutline(ENTITIES[S.selN.k], S.selN.x, S.selN.y, S.selN.ds || 1, '#fff')
 
   // Two levers keep the frame cheap with hundreds of entities:
   //  - viewport cull (onScreen): off-screen entities are skipped everywhere.
@@ -494,11 +491,6 @@ export function render() {
       const [sx, sy] = g(b.x, b.y, 26)
       X.fillText('' + b.e, sx, sy)
     }
-  // resource count above the selected crystal
-  if (S.selN && S.selN.amt > 0) {
-    const [sx, sy] = g(S.selN.x, S.selN.y, 24)
-    X.fillText('' + Math.ceil(S.selN.amt), sx, sy)
-  }
   X.textAlign = 'left'
   if (MINIMAP) drawMinimap()
   if (false) drawThreat()

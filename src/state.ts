@@ -26,7 +26,6 @@ export const S = {
   tool: 'S' as BType,
   mode: 'select' as 'select' | 'build', // build mode shows a placement preview
   sel: null as Building | null, // selected building
-  selN: null as ResNode | null, // selected resource node (crystal)
   linking: false, // 'z' armed: next click on an in-range link sets sel's route
   mouse: null as Pt | null, // last cursor screen pos (for build preview)
   spawnT: 0, // enemies already spawned in the current threat level
