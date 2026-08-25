@@ -36,20 +36,21 @@ function hop(from: Pt, to: Building, col = 0) {
   S.pulses.push({ x: from.x, y: from.y, tx: to.x, ty: to.y, p: 0, len, dst: to, col })
 }
 
-// a neighbour that can receive a relayed unit: a link (forwards when done, builds while
-// under construction) or anything that still WANTS a unit. This excludes full miners/towers
-// and finished solars, so surplus energy is never sent to them in the first place.
-const canReceive = (o: Building) => o.t === 'L' || wants(o)
+// can building `o` receive energy of color `col`? A link forwards (or builds while under
+// construction); anything else must still WANT a unit — excluding full miners/towers and
+// finished solars. A link's color filter (filt) also rejects energy lacking that component.
+const accepts = (o: Building, col: number) => (o.t === 'L' || wants(o)) && (!o.filt || col & o.filt)
 // relay a unit onward FROM `node`, preserving its energy color.
 function relay(node: Building, col = 0) {
-  // forced route (set via 'z') always wins, as long as the target is alive, in range,
-  // and can actually receive (never route energy into a finished solar — it only emits)
+  // forced route always wins, as long as the target is alive, in range, and can receive
   const rt = node.route
-  if (rt && S.buildings.includes(rt) && canReceive(rt) && near(node, rt, LINK_RANGE)) {
+  if (rt && S.buildings.includes(rt) && accepts(rt, col) && near(node, rt, LINK_RANGE)) {
     hop(node, rt, col)
     return
   }
-  const ns = S.buildings.filter((o) => o !== node && canReceive(o) && near(node, o, LINK_RANGE))
+  // never relay back against an established directed connection: if o routes to us (o->node),
+  // don't send energy the other way (node->o).
+  const ns = S.buildings.filter((o) => o !== node && o.route !== node && accepts(o, col) && near(node, o, LINK_RANGE))
   if (!ns.length) return
   node.ni = ((node.ni || 0) + 1) % ns.length
   hop(node, ns[node.ni], col)
@@ -120,7 +121,11 @@ export function stepSim(dt: number) {
 
   // Construction: `bp` counts down as energy arrives (one chunk per unit). When it
   // hits 0 the building is complete — clear bp so it becomes solid and operational.
-  for (const b of S.buildings) if (b.bp === 0) b.bp = undefined
+  for (const b of S.buildings) if (b.bp === 0) {
+    b.bp = undefined
+    // a rush-built target: undo the temporary reroutes that fed it, then clear the flag
+    if (b.rush) { for (const o of S.buildings) if (o.route === b) o.route = null; b.rush = false }
+  }
 
   // ease each crystal's displayed scale toward its amt-based size (shrinks to 0)
   for (const n of S.nodes) {
@@ -167,7 +172,7 @@ export function stepSim(dt: number) {
       // spawn mining sparks off the crystal, but ONLY while the beam is near full (mp in
       // the middle of the cut). Spawning during the fade-out tail would birth particles
       // that then outlive the vanished beam — the "burst after the beam is gone".
-      if (mp > 0.15 && mp < 0.7 && rnd() < dt * 30) spawnParts(b.mn.x, b.mn.y, 1, 50, '80,255,150')
+      if (mp > 0.15 && mp < 0.7 && rnd() < dt * 30) spawnParts(b.mn.x, b.mn.y, 1, 50, '255,238,140')
       if (mp >= 1) {
         b.mn = null
         b.mp = 0.5
@@ -211,11 +216,15 @@ export function stepSim(dt: number) {
     if (p.p >= 1 && p.dst) {
       const d = p.dst
       const inCol = p.col
+      // energy in the pulse's own color, for particle bursts when it's destroyed
+      const col = inCol ? `${inCol & 4 ? 255 : 60},${inCol & 2 ? 255 : 60},${inCol & 1 ? 255 : 60}` : '255,238,140'
+      // target was SOLD mid-flight (no longer in the world): the energy is lost — burst it
+      if (!S.buildings.includes(d)) { spawnParts(d.x, d.y, 8, 60, col); p.dst = null as never; continue }
       if (d.crystalCol != null) {
         // color crystal: OR in the crystal's color bit (same color twice is a no-op by OR),
-        // then relay onward. Subject to the same overload cap as regular links.
-        if ((d.load = (d.load || 0) + 1) <= LINK_MAX)
-          relay(d, inCol | d.crystalCol)
+        // then relay onward. Subject to the same overload cap as regular links (excess burns).
+        if ((d.load = (d.load || 0) + 1) <= LINK_MAX) relay(d, inCol | d.crystalCol)
+        else spawnParts(d.x, d.y, 8, 60, col)
       } else if (wants(d)) {
         feed(d) // consumer keeps it (or it builds the building)
       // otherwise it's a finished link (forward), or a miner/tower that filled up while the
@@ -225,7 +234,8 @@ export function stepSim(dt: number) {
         // links overload: count energy passing through this second. Once a link exceeds
         // LINK_MAX it turns red (hot) and BURNS the excess instead of relaying — a sink so
         // energy that never lands doesn't circulate forever.
-        if (d.t === 'L' && (d.load = (d.load || 0) + 1) > LINK_MAX) continue // over cap: burn it
+        // over cap: BURN it (turns red) — the lost energy bursts into particles
+        if (d.t === 'L' && (d.load = (d.load || 0) + 1) > LINK_MAX) { spawnParts(d.x, d.y, 8, 60, col); continue }
         relay(d, inCol) // carry color through regular links
       }
       p.dst = null as unknown as Building // handled once

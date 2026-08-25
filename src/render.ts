@@ -28,6 +28,9 @@ import { LT, S, SUN, V, X } from './state'
 import { chainHead, towerChainLen } from './sim'
 import type { Face, V3 } from './types'
 
+// link color-filter tint, indexed by the filter bitmask (0=any/yellow, 1=B, 2=G, 4=R)
+const FILTCOL = ['#ee4', '#48f', '#4f6', , '#f44']
+
 function tp(pts: [number, number][]) { pts.forEach(([x, y], i) => i ? X.lineTo(x, y) : X.moveTo(x, y)) }
 function xv([x, y, z]: V3, sp: { scl: number; rot: V3 }) { return rotate([x * sp.scl, y * sp.scl, z * sp.scl], sp.rot) }
 function beam(ax: number, ay: number, bx: number, by: number) { X.beginPath(); X.moveTo(ax, ay); X.lineTo(bx, by); X.stroke() }
@@ -304,7 +307,10 @@ export function render() {
     for (const b of buildings)
       if (b.bp == null && onScreen(b))
         entityFaces(ENTITIES[b.ek ?? b.t], b.x, b.y, 1, faces,
-          b.load! > LINK_MAX ? '#f33' : undefined, // overloaded link: red
+          // overloaded link flashes red; else a link is tinted by its color filter
+          // (yellow=any, R/G/B); other buildings keep their own color.
+          b.load! > LINK_MAX ? '#f33'
+            : b.t === 'L' && !b.crystalCol ? FILTCOL[b.filt || 0] : undefined,
           b.t === 'M' && starved(b) ? '#a4f' : undefined)
     for (const e of enemies)
       if (onScreen(e)) entityFaces(ENTITIES.E, e.x, e.y, 1, faces)
@@ -373,11 +379,10 @@ export function render() {
         [bx, by] = g(b.route.x, b.route.y, 6)
       beam(ax, ay, bx, by)
     }
-  // linking armed: preview line from the selected source to the cursor
-  if (S.linking && S.sel && S.mouse) {
+  // drag-to-connect preview: dashed line from the source building to the cursor
+  if (S.chainFrom && S.mouse) {
     const c = unproject(S.mouse.x, S.mouse.y)
-    const [ax, ay] = g(S.sel.x, S.sel.y, 6),
-      [bx, by] = g(c.x, c.y, 6)
+    const [ax, ay] = g(S.chainFrom.x, S.chainFrom.y, 6), [bx, by] = g(c.x, c.y)
     beam(ax, ay, bx, by)
   }
   X.setLineDash([])
@@ -430,7 +435,7 @@ export function render() {
   // energy pulses: colored glowing orbs — color encodes the energy's RGB bitmask.
   // Index 0 = uncolored (warm dim white), 1-7 = B/G/GB/R/RB/RG/RGB via bitmask.
   const PCOLS = [
-    ['255,238,140', 1, 0.5], // 0: uncolored
+    ['255,200,140', 1, 0.65], // 0: uncolored
     ['20,90,255', 1, 1],     // 1: B
     ['62,255,62', 1, 1],     // 2: G
     ['0,255,255', 1, 1],     // 3: GB/cyan
@@ -446,19 +451,21 @@ export function render() {
     glow(sx, sy, c, k, sc)
   }
 
+  // tower + miner beams use the UNCOLORED energy look (warm dim white, = PCOLS[0])
+  const UNCOL = '255,238,140'
   // tower beams: the head fires at an enemy, with a glow at the tower origin
-  X.strokeStyle = '#f88'
+  X.strokeStyle = '#feb'
   X.lineWidth = 2
   for (const b of buildings)
     if (b.t === 'T' && b.fxt && b.fxt > 0 && b.fx) {
       const [ax, ay] = g(b.x, b.y, 20),
         [bx, by] = g(b.fx.x, b.fx.y, 7)
-      glow(ax, ay, '255,120,110')
+      glow(ax, ay, UNCOL)
       beam(ax, ay, bx, by)
     }
   // miner lasers: fade in over the first 300ms and out over the last 300ms of the 1s cut.
-  // A green glow (same soft radial style as energy pulses) pulses at the laser origin.
-  X.strokeStyle = '#4f8' // miner green (COL.M)
+  // An uncolored glow (same soft radial style as energy pulses) pulses at the laser origin.
+  // (strokeStyle/lineWidth still '#feb'/2 from the tower loop above)
   for (const b of buildings)
     if (b.t === 'M' && b.bp == null) {
       const [ax, ay] = g(b.x, b.y, 13)
@@ -466,8 +473,8 @@ export function render() {
         const mp = b.mp || 0
         const a = Math.max(0, Math.min(1, Math.min(mp, 1 - mp) / 0.3)) // shared fade
         const [bx, by] = g(b.mn.x, b.mn.y, 6)
-        glow(ax, ay, '80,255,150', a) // origin glow
-        glow(bx, by, '80,255,150', a, 0.8) // impact glow at the crystal (half size)
+        glow(ax, ay, UNCOL, a) // origin glow
+        glow(bx, by, UNCOL, a, 0.8) // impact glow at the crystal (half size)
         X.globalAlpha = a // beam
         beam(ax, ay, bx, by)
       } else if (starved(b)) {

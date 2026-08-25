@@ -103,7 +103,7 @@ async function build() {
     // <script>), then prepend Leva before it so window.LT exists before the game runs.
     html = out
       .replace('</script>', '</script>' + RELOAD)
-      .replace('<script>', LEVA + '<script>')
+      // .replace('<script>', LEVA + '<script>')
     clients.forEach((c) => c.write('data: reload\n\n'))
     console.log('  rebuilt', new Date().toISOString().slice(11, 19))
   } catch (e) {

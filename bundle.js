@@ -54,7 +54,10 @@ export async function bundle({ minify = true } = {}) {
     // regen() to the Leva panel) is dead-code-eliminated from the minified release.
     // MINIMAP: true = corner minimap, false = edge threat arrows. Injected as a literal so
     // the unused one (and its whole module) is dead-code-eliminated. FLIP IT HERE.
-    define: { DEV: String(!minify), MINIMAP: 'false', FOG: 'true' },
+    // DEVTOOLS: in-editor debug shortcuts (e.g. press 'e' to spawn an enemy at the cursor).
+    // Injected as a literal so the whole dev-tools block is dead-code-eliminated when off.
+    // Defaults on for the dev build, off for release; flip the release value here to test.
+    define: { DEV: String(!minify), MINIMAP: 'false', FOG: 'true', DEVTOOLS: String(!minify) },
     write: false,
   });
   const js = res.outputFiles[0].text.trim();

@@ -28,7 +28,7 @@ export const S = {
   tool: 'S' as BType,
   mode: 'select' as 'select' | 'build', // build mode shows a placement preview
   sel: null as Building | null, // selected building
-  linking: false, // 'z' armed: next click on an in-range link sets sel's route
+  chainFrom: null as Building | null, // source of an active drag-to-connect (preview line)
   mouse: null as Pt | null, // last cursor screen pos (for build preview)
   spawnT: 0, // enemies already spawned in the current threat level
   threat: 0, // threat level: +1 each minute; level N spawns N enemies over that minute

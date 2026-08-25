@@ -23,9 +23,6 @@ const sp = (
   off: V3 = [0, 0, 0], rot: V3 = [0, 0, 0], scl = 1, amb = 0.3, dif = 0.59, a = 1,
 ): Spline => ({ geo: { profile, seg }, mat: { col, amb, dif, a }, off, rot, scl })
 
-// shared crystal profile — the RGB color crystals are identical but for their tint
-const CRY: [number, number][] = [[3.5, 0], [4.5, 14.5], [0, 21]]
-
 export const ENTITIES: Record<EType, Entity> = {
   S: { name: 'solar', splines: [
     sp([[10, 2], [10, 5], [8.5, 8.5], [6.5, 11], [3.5, 12.5]], 10, '#c342ff', [0, 0, 0], [0, 0, 0], 1, 0.3, 0.59),
@@ -33,7 +30,7 @@ export const ENTITIES: Record<EType, Entity> = {
     sp([[3.5, 12.5], [3.5, 13.5], [1.5, 14.5], [0, 14.5]], 10, '#A9A98B', [0, 0, 0], [0, 0, 0], 1, 0.3, 0.59),
   ] },
   L: { name: 'link', splines: [
-    sp([[0, 1], [3, 7], [0, 14]], 12, '#fcff42', [0, 0, 0], [0, 0, 0], 1, 0.63, 1),
+    sp([[0, 2], [2.5, 7], [0, 12]], 12, '#fcff42', [0, 0, 0], [0, 0, 0], 1, 0.63, 1),
   ] },
   M: { name: 'miner', splines: [
     sp([[2, 0], [1.5, 12], [0, 14]], 8, '#4f8', [0, 0, 0], [0, 0, 0], 1, 0.3, 0.59),
@@ -57,9 +54,15 @@ export const ENTITIES: Record<EType, Entity> = {
   rockSmall: { name: 'rock-small', splines: [
     sp([[2, 0], [2.5, 3], [0, 4]], 7, '#afb295', [0, 1, 0], [0, 0, 1.6], 1, 0.3, 0.59),
   ] },
-  crystalR: { name: 'crystal-r', splines: [sp(CRY, 5, '#ff5555',[0,0,0],[0,0,0],1,1,.5,0.7)] },
-  crystalG: { name: 'crystal-g', splines: [sp(CRY, 5, '#55ff55',[0,0,0],[0,0,0],1,1,.5,0.7)] },
-  crystalB: { name: 'crystal-b', splines: [sp(CRY, 5, '#5555ff',[0,0,0],[0,0,0],1,1,.5,0.7)] },
+  crystalR: { name: 'crystal-r', splines: [
+    sp([[3.5, 0], [4.5, 14.5], [0, 21]], 5, '#ff5555', [0, 0, 0], [0, 0, 0], 1, 1, 0.5, 0.7),
+  ] },
+  crystalG: { name: 'crystal-g', splines: [
+    sp([[3.5, 0], [4.5, 14.5], [0, 21]], 5, '#55ff55', [0, 0, 0], [0, 0, 0], 1, 1, 0.5, 0.7),
+  ] },
+  crystalB: { name: 'crystal-b', splines: [
+    sp([[3.5, 0], [4.5, 14.5], [0, 21]], 5, '#5555ff', [0, 0, 0], [0, 0, 0], 1, 1, 0.5, 0.7),
+  ] },
   E: { name: 'enemy', splines: [
     sp([[4, 12], [0, 14]], 16, '#ff243a', [0, -2, 0], [0, 0, 0], 1, 0.3, 0.59),
     sp([[5, 11], [4, 12]], 16, '#560101', [0, -2, 0], [0, 0, 0], 1, 0.3, 0.59),

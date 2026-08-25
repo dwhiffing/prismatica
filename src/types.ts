@@ -29,6 +29,8 @@ export interface Building extends Pt {
   // LINK_MAX it overloads — excess is burned and the link draws red until the next reset
   crystalCol?: number // if set: world color crystal; ORs this color bit into passing energy (4=R,2=G,1=B)
   ek?: EType // entity model override (used by color crystals to render a crystal instead of link)
+  rush?: boolean // "rush build": in-range links were rerouted to feed this; cleared when built
+  filt?: number // link color filter: 0=any(yellow), else only energy with this bit (4=R,2=G,1=B)
 }
 export interface ResNode extends Pt {
   amt: number // resources remaining

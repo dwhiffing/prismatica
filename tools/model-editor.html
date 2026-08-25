@@ -75,23 +75,21 @@
 <script>
 // ============ data model (mirrors src/models.ts) ============
 // each spline: {geo:{profile:[[r,h]],seg}, mat:{col,amb,dif}, off:[x,y,z], rot:[x,y,z], scl}
-function sp(profile,seg,col,off=[0,0,0],rot=[0,0,0],scl=1,amb=0.3,dif=0.59){
-  return { geo:{profile,seg}, mat:{col,amb,dif}, off:off.slice(), rot:rot.slice(), scl };
+function sp(profile,seg,col,off=[0,0,0],rot=[0,0,0],scl=1,amb=0.3,dif=0.59,a=1){
+  return { geo:{profile,seg}, mat:{col,amb,dif,a}, off:off.slice(), rot:rot.slice(), scl };
 }
 // Embedded fallback (used only if src/models.ts can't be fetched, e.g. opened
 // directly via file:// with fetch blocked). The real source of truth is models.ts,
 // loaded by loadModels() below.
-let COL = { S:'#fd4', L:'#4cf', M:'#4f8', T:'#f66', N:'#c9f', E:'#f2a' };
+// NOTE: this is only a minimal offline fallback (used if src/models.ts can't be
+// fetched). The real, complete data — rocks, RGB crystals, alpha, etc. — is loaded
+// from models.ts by loadModels(). Keys here just need to be valid EType values.
+let COL = { S:'#fd4', L:'#4cf', M:'#4f8', T:'#f66', E:'#f2a' };
 let ENTITIES = {
   S:{name:'solar',splines:[ sp([[0,0],[10,0],[11,4],[8,9],[4,13],[0,15]],10,'#fd4') ]},
   L:{name:'link', splines:[ sp([[0,0],[3,0],[4,3],[3,12],[5,14],[0,15]],6,'#4cf') ]},
   M:{name:'miner',splines:[ sp([[0,0],[9,0],[9,5],[5,7],[3,9],[2,16],[0,18]],8,'#4f8') ]},
   T:{name:'tower',splines:[ sp([[0,0],[8,0],[8,6],[5,8],[5,18],[3,19],[3,22],[0,22]],8,'#f66') ]},
-  N:{name:'crystal',splines:[
-    sp([[0,0],[3.5,0],[4.5,14.5],[0,21]],5,'#c9f',[0,0,0],[0,0,0],1),
-    sp([[0,0],[3.5,0],[4.5,14.5],[0,21]],5,'#b7f',[-3,0,3],[0,0.9,0],0.65),
-    sp([[0,0],[3.5,0],[4.5,14.5],[0,21]],5,'#a6e',[3,0,-4],[0,-1.9,0],0.5),
-  ]},
   E:{name:'enemy',splines:[ sp([[0,0],[7,4],[8,8],[5,12],[0,14]],7,'#f2a') ]},
 };
 
@@ -112,18 +110,19 @@ async function loadModels(){
     const res = await fetch('../src/models.ts?t=' + Date.now(), { cache: 'no-store' });
     if (!res.ok) throw new Error('HTTP '+res.status);
     const txt = await res.text();
-    const colSrc = objLiteralAfter(txt, 'const COL');
     const entSrc = objLiteralAfter(txt, 'const ENTITIES');
-    if (!colSrc || !entSrc) throw new Error('could not locate COL/ENTITIES');
+    if (!entSrc) throw new Error('could not locate ENTITIES');
     // shared profile consts (e.g. CRY) referenced inside ENTITIES — hoist them so
     // the eval can resolve those identifiers. Match `const NAME = [ ... ]` (array).
     let consts = '';
     for (const m of txt.matchAll(/const\s+([A-Z][A-Z0-9_]*)\s*(?::[^=]+)?=\s*(\[[\s\S]*?\])\s*\n/g))
-      if (m[1] !== 'COL' && m[1] !== 'ENTITIES') consts += 'const ' + m[1] + '=' + m[2] + ';';
+      if (m[1] !== 'ENTITIES') consts += 'const ' + m[1] + '=' + m[2] + ';';
     // eval with sp in scope; the literals are plain data + sp() calls
-    const load = new Function('sp', consts + 'return { COL: (' + colSrc + '), ENTITIES: (' + entSrc + ') };');
-    const data = load(sp);
-    COL = data.COL; ENTITIES = data.ENTITIES;
+    const load = new Function('sp', consts + 'return (' + entSrc + ');');
+    ENTITIES = load(sp);
+    // derive the per-entity swatch color from each entity's first spline (models.ts no
+    // longer carries a separate COL map)
+    COL = {}; for (const k in ENTITIES) COL[k] = ENTITIES[k].splines[0].mat.col;
     const nspl = Object.values(ENTITIES).reduce((a, e) => a + e.splines.length, 0);
     document.getElementById('loadWarn').style.color = '#7ea';
     document.getElementById('loadWarn').textContent = '✓ loaded src/models.ts (' + nspl + ' splines)';
@@ -302,12 +301,14 @@ function hex6(h){ if(h.length===4) return '#'+h[1]+h[1]+h[2]+h[2]+h[3]+h[3]; ret
 function fmtV(v){ return '['+v.map(n=>+n.toFixed(3)).join(', ')+']'; }
 function fmtProfile(p){ return '['+p.map(([r,h])=>`[${r}, ${h}]`).join(', ')+']'; }
 function fmtSpline(s){
-  return `    sp(${fmtProfile(s.geo.profile)}, ${s.geo.seg}, '${s.mat.col}', ${fmtV(s.off)}, ${fmtV(s.rot)}, ${+s.scl.toFixed(3)}, ${+s.mat.amb.toFixed(3)}, ${+s.mat.dif.toFixed(3)}),`;
+  const a = s.mat.a;
+  // alpha is a trailing arg defaulting to 1 — only emit it when a translucent material sets it
+  const aArg = (a != null && a !== 1) ? `, ${+a.toFixed(3)}` : '';
+  return `    sp(${fmtProfile(s.geo.profile)}, ${s.geo.seg}, '${s.mat.col}', ${fmtV(s.off)}, ${fmtV(s.rot)}, ${+s.scl.toFixed(3)}, ${+s.mat.amb.toFixed(3)}, ${+s.mat.dif.toFixed(3)}${aArg}),`;
 }
 function exportFile(){
   const keys = Object.keys(ENTITIES);
   const etype = keys.map(k=>`'${k}'`).join(' | ');
-  const colLine = keys.map(k=>`${k}: '${COL[k]}'`).join(', ');
   const head =
 `// ============================================================
 //  Entities & Splines — model data for the game.
@@ -319,7 +320,7 @@ export type V3 = [number, number, number]
 export type EType = ${etype}
 
 export interface Geo { profile: [number, number][]; seg: number }
-export interface Material { col: string; amb: number; dif: number }
+export interface Material { col: string; amb: number; dif: number; a?: number }
 export interface Spline {
   geo: Geo
   mat: Material
@@ -329,14 +330,10 @@ export interface Spline {
 }
 export interface Entity { name: string; splines: Spline[] }
 
-export const COL: Record<EType, string> = {
-  ${colLine},
-}
-
 const sp = (
   profile: [number, number][], seg: number, col: string,
-  off: V3 = [0, 0, 0], rot: V3 = [0, 0, 0], scl = 1, amb = 0.3, dif = 0.59,
-): Spline => ({ geo: { profile, seg }, mat: { col, amb, dif }, off, rot, scl })
+  off: V3 = [0, 0, 0], rot: V3 = [0, 0, 0], scl = 1, amb = 0.3, dif = 0.59, a = 1,
+): Spline => ({ geo: { profile, seg }, mat: { col, amb, dif, a }, off, rot, scl })
 
 export const ENTITIES: Record<EType, Entity> = {
 `;
@@ -379,7 +376,7 @@ function fillEntitySelect(){ entSel.innerHTML='';
   for(const k in ENTITIES){ const o=document.createElement('option'); o.value=k; o.textContent=`${k} — ${ENTITIES[k].name}`; entSel.appendChild(o); }
   entSel.value=cur; }
 entSel.onchange=()=>{ cur=entSel.value; si=0; refresh(); };
-document.getElementById('addSpline').onclick=()=>{ const s=spl(); ent().splines.push(sp(s.geo.profile.map(p=>p.slice()), s.geo.seg, s.mat.col, [0,0,0],[0,0,0],1,s.mat.amb,s.mat.dif)); si=ent().splines.length-1; refresh(); };
+document.getElementById('addSpline').onclick=()=>{ const s=spl(); ent().splines.push(sp(s.geo.profile.map(p=>p.slice()), s.geo.seg, s.mat.col, [0,0,0],[0,0,0],1,s.mat.amb,s.mat.dif,s.mat.a)); si=ent().splines.length-1; refresh(); };
 const segEl=document.getElementById('seg'), segv=document.getElementById('segv');
 segEl.oninput=()=>{ spl().geo.seg=+segEl.value; segv.textContent=segEl.value; refresh(); };
 document.getElementById('addPt').onclick=()=>{ const P=spl().geo.profile; const[r,h]=P[P.length-1]; P.push([r,h+2]); refresh(); };

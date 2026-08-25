@@ -25,7 +25,7 @@ export const R: Record<EType, number> = {
   crystalB: 5,
   E: 5,
 } // pick/collision radii
-export const COST: Record<BType, number> = { S: 30, L: 5, M: 20, T: 25 } // resource cost to place
+export const COST: Record<BType, number> = { S: 40, L: 5, M: 15, T: 25 } // resource cost to place
 export const BUILD: Record<BType, number> = { S: 25, L: 2, M: 8, T: 12 } // energy to construct
 export const CHARGE = 5 // energy a miner/tower stores at full charge
 export const NODE_AMT = 250 // starting resources in a crystal node
