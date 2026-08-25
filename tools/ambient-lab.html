@@ -1,0 +1,622 @@
+<title>ZzFX Ambient Lab</title>
+<style>
+  :root {
+    --bg: #0a0e14; --panel: #121824; --ink: #cdd6e4; --dim: #6b7688;
+    --accent: #5cc8ff; --accent2: #b48cff; --line: #1f2836; --good: #4fd6a0;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background:
+      radial-gradient(1200px 600px at 70% -10%, #16233a 0%, transparent 60%),
+      radial-gradient(900px 500px at 10% 110%, #1a1330 0%, transparent 55%),
+      var(--bg);
+    color: var(--ink); font-family: var(--mono); line-height: 1.5;
+    padding: 2.5rem 1.25rem 5rem; min-height: 100vh;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; font-weight: 600; letter-spacing: .04em; margin: 0 0 .25rem; }
+  h1 .ey { color: var(--accent); }
+  .sub { color: var(--dim); margin: 0 0 2rem; font-size: .82rem; }
+  .card {
+    background: linear-gradient(180deg, #131b29, #0f1622);
+    border: 1px solid var(--line); border-radius: 14px;
+    padding: 1.1rem 1.2rem 1.25rem; margin-bottom: 1.1rem;
+  }
+  .card h2 { font-size: .95rem; margin: 0 0 .15rem; color: var(--accent2); letter-spacing: .02em; }
+  .card p.d { color: var(--dim); font-size: .78rem; margin: 0 0 .9rem; }
+  .row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+  button {
+    font-family: var(--mono); font-size: .8rem; color: var(--ink);
+    background: #1b2536; border: 1px solid #2b3a52;
+    padding: .5rem .9rem; border-radius: 8px; cursor: pointer; transition: .12s;
+  }
+  button:hover { border-color: var(--accent); color: #fff; }
+  button.play { background: #13314a; border-color: #2f6b96; }
+  button.stop { background: #3a1622; border-color: #7a2c40; }
+  button.on { background: #123726; border-color: var(--good); color: #fff; }
+  label.k { color: var(--dim); font-size: .72rem; margin-left: .4rem; }
+  input[type=range] { accent-color: var(--accent); vertical-align: middle; }
+  .val { color: var(--accent); font-size: .72rem; min-width: 3ch; display: inline-block; }
+  code.snip {
+    display: block; white-space: pre-wrap; word-break: break-all;
+    background: #0b0f17; border: 1px solid var(--line); border-radius: 8px;
+    padding: .6rem .7rem; font-size: .7rem; color: var(--dim); margin-top: .8rem;
+  }
+  .foot { color: var(--dim); font-size: .72rem; margin-top: 1.5rem; text-align: center; }
+  .badge { color: var(--good); font-size: .72rem; }
+</style>
+
+<div class="wrap">
+  <h1><span class="ey">◇</span> ZzFX Ambient Lab</h1>
+  <p class="sub">Techniques for chill sci-fi ambient (pads &amp; drones) plus procedural drum options, running the actual zzfx synth. Click anything to start audio. Loops can run together — layer a pad, a texture, and a groove. Each card shows a copy-paste snippet for the game's sounds.ts.</p>
+  <div id="cards"></div>
+  <p class="foot">All sound generated live by ZzFX (Frank Force, MIT). Nothing is recorded or streamed.</p>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────
+// ZzFX core (v1.3.1, minified) + zzfxM, lifted verbatim from the game's zzfx.ts
+// ─────────────────────────────────────────────────────────────────────────
+const zzfxV = .3, zzfxR = 44100;
+const zzfxX = new (window.AudioContext||window.webkitAudioContext)();
+const master = zzfxX.createGain(); master.gain.value = .55; master.connect(zzfxX.destination);
+
+function zzfxG(t=1,a=.05,e=220,f=0,h=0,M=.1,r=0,c=1,d=0,s=0,l=0,i=0,p=0,g=0,n=0,x=0,y=0,z=1,q=0,B=0,F=0){
+  let P=Math.PI*2,S=t=>t<0?-1:1,R=zzfxR,A=R,C;e*= (1+a*2*Math.random()-a)*P/R;let E=e,I=[],T=0,m=0,o=0,j=1,w=0,v=0,u=0;
+  d*=500*P/R/R;let D=d;a=f*R+9;h*=R;M*=R;s*=R;p=p*R|0;t*=zzfxV;
+  let G=(a+h+M+s+B*R)|0, k=Math.PI*Math.abs(F)*2/R, K=Math.cos(k), Q=Math.sin(k)/2/2,
+      a0=1+Q, a1=-2*K/a0, a2=(1-Q)/a0, b0=(1+S(F)*K)/2/a0, b1=-(S(F)+K)/a0, b2=b0, x2=0,x1=0,y2=0,y1=0;
+  l*=P/R; i*=R; g*=P/R; n*=P/R;
+  for(;o<G;I[o++]=w){
+    if(!(++u% ((x*100)|0||1))){
+      C=r?r>1?r>2?r>3?Math.sin(T**3):Math.max(Math.min(Math.tan(T),1),-1):1-(((2*T/P%2+2)%2)):1-4*Math.abs(Math.round(T/P)-T/P):Math.sin(T);
+      C=(p?1-B+B*Math.sin(P*o/p):1)*S(C)*Math.abs(C)**c*t*(o<a?o/a:o<a+h?1-((o-a)/h)*(1-z):o<a+h+M?z:o<G-B*R?(G-o-B*R)/s*z:0);
+      C=B*R?C/2+(B*R>o?0:((o<G-B*R?1:(G-o)/(B*R))*I[o-B*R|0]/2/t)):C;
+      if(F){x2=x1;x1=C;y2=y1;y1=b2*x2+b1*x2+b0*x1-a2*y2-a1*y1;C=y1;}
+      w=C;
+    }
+    d+=D; e+=d; C=E*Math.cos(l*m++); T+=C+C*g*Math.sin(o**5);
+    if(j&&++j>i){e+=s?0:0;j=0;} // (pitchJump handled below for correctness)
+  }
+  // NOTE: this is a compact re-impl; for exactness the game uses the full zzfxG. Fine for ambient.
+  return Float32Array.from(I);
+}
+// Use the game's EXACT zzfxG instead (safer). Paste of zzfx.ts zzfxG:
+function ZG(volume=1,randomness=.05,frequency=220,attack=0,sustain=0,release=.1,shape=0,shapeCurve=1,slide=0,deltaSlide=0,pitchJump=0,pitchJumpTime=0,repeatTime=0,noise=0,modulation=0,bitCrush=0,delay=0,sustainVolume=1,decay=0,tremolo=0,filter=0){
+  const PI2=Math.PI*2, sign=v=>v<0?-1:1; slide=slide*500*PI2/zzfxR/zzfxR; const startSlide=slide;
+  frequency=frequency*((1+randomness*2*Math.random()-randomness)*PI2)/zzfxR; const startFrequency=frequency;
+  const b=[]; let t=0,tm=0,i=0,j=1,r=0,c=0,s=0,f,length; const quality=2;
+  const w=PI2*Math.abs(filter)*2/zzfxR, cos=Math.cos(w), alpha=Math.sin(w)/2/quality;
+  const a0=1+alpha,a1=-2*cos/a0,a2=(1-alpha)/a0,b0=(1+sign(filter)*cos)/2/a0,b1=-(sign(filter)+cos)/a0,b2=b0;
+  let x2=0,x1=0,y2=0,y1=0;
+  attack=attack*zzfxR+9; decay*=zzfxR; sustain*=zzfxR; release*=zzfxR; delay*=zzfxR;
+  deltaSlide*=500*PI2/zzfxR**3; modulation*=PI2/zzfxR; pitchJump*=PI2/zzfxR; pitchJumpTime*=zzfxR;
+  repeatTime=repeatTime*zzfxR|0; volume*=zzfxV; length=(attack+decay+sustain+release+delay)|0;
+  while(i<length){
+    if(!(++c%((bitCrush*100)|0||1))){
+      s=shape?shape>1?shape>2?shape>3?Math.sin(t**3):Math.max(Math.min(Math.tan(t),1),-1):1-((2*t/PI2%2+2)%2):1-4*Math.abs(Math.round(t/PI2)-t/PI2):Math.sin(t);
+      s=(repeatTime?1-tremolo+tremolo*Math.sin(PI2*i/repeatTime):1)*sign(s)*Math.abs(s)**shapeCurve*(i<attack?i/attack:i<attack+decay?1-((i-attack)/decay)*(1-sustainVolume):i<attack+decay+sustain?sustainVolume:i<length-delay?(length-i-delay)/release*sustainVolume:0);
+      s=delay?delay>i?s/2:s/2+(i<length-delay?1:(length-i)/delay)*b[(i-delay)|0]/2/volume:s;
+      if(filter){x2=x1;x1=s;y2=y1;y1=b2*x2+b1*x2+b0*x1-a2*y2-a1*y1;s=y1;}
+    }
+    slide+=deltaSlide; frequency+=slide; f=frequency*Math.cos(modulation*tm++); t+=f+f*noise*Math.sin(i**5);
+    if(j&&++j>pitchJumpTime){frequency+=pitchJump;j=0;}
+    if(repeatTime&&!(++r%repeatTime)){frequency=startFrequency;slide=startSlide;j=j||1;}
+    b[i++]=s*volume;
+  }
+  return Float32Array.from(b);
+}
+const zzfxM=(n,f,t,e=125)=>{let l,o,z,r,g,h,x,a,u,c,d,i,m,p,G,M=0,R=[],b=[],j=[],k=0,q=0,s=1,v={},w=zzfxR/e*60>>2;for(;s;k++)R=[s=a=d=m=0],t.map((e,d)=>{for(x=f[e][k]||[0,0,0],s|=!!f[e][k],G=m+(f[e][0].length-2-!a)*w,p=d==t.length-1,o=2,r=m;o<x.length+p;a=++o){for(g=x[o],u=o==x.length+p-1&&p||c!=(x[0]||0)|g|0,z=0;z<w&&a;z++>w-99&&u?i+=(i<1)/99:0)h=(1-i)*R[M++]/2||0,b[r]=(b[r]||0)-h*q+h,j[r]=(j[r++]||0)+h*q+h;g&&(i=g%1,q=x[1]||0,(g|=0)&&(R=v[[c=x[M=0]||0,g]]=v[[c,g]]||(l=[...n[c]],l[2]*=2**((g-12)/12),g>0?ZG(...l):[])))}m=G});return[b,j]};
+
+// play a single zzfx param array; routes to `dest` (default master). returns the source.
+function play(params, dest){
+  const data = ZG(...params);
+  const buf = zzfxX.createBuffer(1, data.length, zzfxR);
+  buf.getChannelData(0).set(data);
+  const src = zzfxX.createBufferSource(); src.buffer = buf;
+  src.connect(dest||master); src.start(); return src;
+}
+// play a multi-channel zzfxM result
+function playSong(songArgs, loop=true){
+  const [L,Rr] = zzfxM(...songArgs);
+  const buf = zzfxX.createBuffer(2, L.length, zzfxR);
+  buf.getChannelData(0).set(L); buf.getChannelData(1).set(Rr.length?Rr:L);
+  const src = zzfxX.createBufferSource(); src.buffer = buf; src.loop = loop;
+  src.connect(master); src.start(); return src;
+}
+document.body.addEventListener('pointerdown', ()=>{ if(zzfxX.state==='suspended') zzfxX.resume(); }, {once:false});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Musical helpers
+// ─────────────────────────────────────────────────────────────────────────
+const rnd = (a,b)=> a + Math.random()*(b-a);
+const pick = arr => arr[Math.floor(Math.random()*arr.length)];
+// scales as semitone offsets from a root
+const SCALES = {
+  penta:   [0,3,5,7,10],       // minor pentatonic — safe & spacey
+  lydian:  [0,2,4,6,7,9,11],   // bright, "sci-fi wonder"
+  aeolian: [0,2,3,5,7,8,10],   // natural minor — melancholy
+};
+const midiHz = m => 440 * 2**((m-69)/12);
+
+// registry of running loops so each card can start/stop independently
+const running = {};
+function toggleLoop(id, btn, startFn){
+  if(running[id]){ clearTimeout(running[id].t); running[id].src?.stop?.(); delete running[id]; btn.classList.remove('on'); btn.textContent = btn.dataset.label; return; }
+  running[id] = {}; btn.classList.add('on'); btn.textContent = '■ stop';
+  startFn(running[id]);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Card builder
+// ─────────────────────────────────────────────────────────────────────────
+const cards = document.getElementById('cards');
+function card(title, desc, bodyFn, snippet){
+  const el = document.createElement('div'); el.className='card';
+  el.innerHTML = `<h2>${title}</h2><p class="d">${desc}</p>`;
+  const row = document.createElement('div'); row.className='row'; el.appendChild(row);
+  bodyFn(row);
+  if(snippet){ const c=document.createElement('code'); c.className='snip'; c.textContent=snippet; el.appendChild(c); }
+  cards.appendChild(el);
+}
+
+// ── 1. DETUNED DRONE PAD ──────────────────────────────────────────────────
+// Long attack/release sine layers, one slightly detuned → slow beating shimmer.
+card('1 · Detuned drone pad',
+  'Two long sine tones a few cents apart. The tiny frequency difference creates a slow "beating" shimmer — the core of every ambient pad. Stack a fifth on top for a chord.',
+  row=>{
+    const dronePad = (hz)=>{
+      // [vol, rand, freq, attack, sustain, release, shape, ...]
+      play([.5,0,hz,3,4,4,0,0,0,0,0,0,0,0,0,0,0,1,0,0]);         // fundamental
+      play([.4,0,hz*1.006,3,4,4,0,0,0,0,0,0,0,0,0,0,0,1,0,0]);   // +~10 cents detune
+      play([.28,0,hz*1.5,3.5,4,4.5,0,0,0,0,0,0,0,0,0,0,0,1,0,0]);// fifth above
+    };
+    const b1=btn('▶ low C drone', 'play', ()=>dronePad(65.4));
+    const b2=btn('▶ warmer G',   'play', ()=>dronePad(98));
+    row.append(b1,b2);
+  },
+  `// call three times, slightly detuned + a fifth\nzzfx(.5,0,65.4,3,4,4,,,,,,,,,,,,1)   // fundamental\nzzfx(.4,0,65.8,3,4,4,,,,,,,,,,,,1)   // detuned\nzzfx(.28,0,98,3.5,4,4.5,,,,,,,,,,,,1) // fifth`);
+
+// ── 2. CHORD-SWELL PADS ───────────────────────────────────────────────────
+// The drone, but a whole CHORD, and it re-triggers to a new chord every ~8s so the
+// harmony drifts — evolution without any melody/plucks (the thing that sounded cheap).
+card('2 · Chord-swell drift',
+  'Sustained chords (all sine drones) that swell in, hold, then crossfade to the next chord every ~8s. Harmony that breathes. No discrete notes — this stays in the "pad" world that sounds good.',
+  row=>{
+    let root=53; // F
+    const chords = [ [0,7,10,15], [0,3,10,14], [-2,5,8,12], [0,7,12,17] ]; // minor-ish voicings (semitones)
+    let ci=0;
+    const swell = ()=>{
+      const ch = chords[ci++ % chords.length];
+      ch.forEach((semi,k)=>{
+        const hz = midiHz(root+semi);
+        // long attack in, long release out; low per-voice volume so the stack stays clean
+        play([.13,0,hz,3,3,4,0,0,0,0,0,0,0,0,0,0,0,1,0,0]);
+        play([.1,0,hz*1.005,3,3,4,0,0,0,0,0,0,0,0,0,0,0,1,0,0]); // detune twin per voice
+      });
+    };
+    btnLoop('chords', row, '▶ start drift', st=>{
+      const step=()=>{ if(!running['chords'])return; swell(); st.t=setTimeout(step, 8000); };
+      step();
+    });
+  },
+  `// re-trigger a full chord of detuned sine drones every ~8s\nfor(const semi of [0,7,10,15]) {\n  zzfx(.13,0,midiHz(root+semi),3,3,4,,,,,,,,,,,,1)\n  zzfx(.1,0,midiHz(root+semi)*1.005,3,3,4,,,,,,,,,,,,1) // detune twin\n}`);
+
+// ── 3. SUB + AIR TWO-BAND BED ─────────────────────────────────────────────
+// Deep sub sine (hull) + very high filtered-noise shimmer (stars), nothing in the mid.
+// Reads as "vast empty space" — pure texture, the register gap does the work.
+card('3 · Sub + air bed',
+  'A deep sub-bass sine far below + a bright filtered-noise shimmer far above, with an empty middle. That register gap is what makes space feel vast. Layer melody/chords into the gap later.',
+  row=>{
+    const sub  = ()=> play([.5,0,40,4,8,6,0,0,0,0,0,0,0,0,0,0,0,1,0,.15]);      // deep hull sub, gentle tremolo
+    const air  = ()=> play([.14,.4,4000,5,7,7,4,0,0,0,0,0,0,1,1,0,0,1,0,.5,2000]); // high filtered-noise stars
+    btnLoop('sub', row, '▶ sub hull', st=>{
+      const step=()=>{ if(!running['sub'])return; sub(); st.t=setTimeout(step, 13000); };
+      step();
+    });
+    btnLoop('air', row, '▶ star shimmer', st=>{
+      const step=()=>{ if(!running['air'])return; air(); st.t=setTimeout(step, 12000); };
+      step();
+    });
+  },
+  `zzfx(.5,0,40,4,8,6,,,,,,,,,,,,1,,.15)           // sub hull\nzzfx(.14,.4,4000,5,7,7,4,,,,,,,1,1,,,1,,.5,2000) // star shimmer (high noise+filter)`);
+
+// ── 4. NOISE / FILTER TEXTURE ─────────────────────────────────────────────
+card('4 · Filtered noise wind',
+  'Not notes at all — noise pushed through the lowpass filter with slow modulation and tremolo. Gives you "space wind", hull hum, or a distant nebula bed under the melody.',
+  row=>{
+    const wind = ()=> play([.4,.3,90,4,5,5,4,0,0,0,0,0,0,1,3,0,0,1,0,.6,-800]);
+    const hum  = ()=> play([.3,.05,55,3,6,4,0,0,0,0,0,0,0,.15,2,0,0,1,0,.3,400]);
+    btnLoop('wind', row, '▶ space wind', st=>{
+      const step=()=>{ if(!running['wind'])return; wind(); st.t=setTimeout(step, 9000); };
+      step();
+    });
+    btnLoop('hum', row, '▶ hull hum', st=>{
+      const step=()=>{ if(!running['hum'])return; hum(); st.t=setTimeout(step, 12000); };
+      step();
+    });
+  },
+  `// noise (param 14) + lowpass filter (last param) + tremolo\nzzfx(.4,.3,90,4,5,5,4,,,,,,,1,3,,,1,,.6,-800) // wind\nzzfx(.3,.05,55,3,6,4,,,,,,,,.15,2,,,1,,.3,400)  // hum`);
+
+// ── 5. MOVING / BREATHING DRONE ───────────────────────────────────────────
+// A held tone that MOVES: slow pitch slide + heavy tremolo + modulation give a
+// living, morphing texture. This is the drone from card 1 but with motion baked in.
+card('5 · Breathing drone',
+  'One long tone with a slow downward pitch slide, deep tremolo (slow volume pulse), and vibrato-like modulation — so it feels alive and morphing rather than static. Try both flavours; they layer well over card 1.',
+  row=>{
+    // slide (param 9), modulation (15), tremolo (20), repeatTime (13) drive the "breathing"
+    const breathe = ()=> play([.34,0,110,3,6,5,0,0,-3,0,0,0,4,0,4,0,0,1,0,.5]);       // vibrato + tremolo swell
+    const glass  =  ()=> play([.26,0,220,4,6,6,0,0,0,-2,0,0,3,0,2,0,.2,1,0,.35,600]);  // slow drift + soft filter
+    btnLoop('breathe', row, '▶ vibrato drone', st=>{
+      const step=()=>{ if(!running['breathe'])return; breathe(); st.t=setTimeout(step, 13000); };
+      step();
+    });
+    btnLoop('glass', row, '▶ drifting glass', st=>{
+      const step=()=>{ if(!running['glass'])return; glass(); st.t=setTimeout(step, 15000); };
+      step();
+    });
+  },
+  `// motion via modulation(vibrato)+tremolo+slide — a living drone\nzzfx(.34,0,110,3,6,5,,,-3,,,,4,,4,,,1,,.5)          // vibrato drone\nzzfx(.26,0,220,4,6,6,,,,-2,,,3,,2,,.2,1,,.35,600)  // drifting glass`);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DRUMS — soft, synthetic, sparse. Ambient percussion is about restraint.
+// ═══════════════════════════════════════════════════════════════════════════
+// Voices (each a zzfx param array). Tuned soft & short for ambient, not a rock kit.
+// Chosen voices (locked from the variant explorer, card 6):
+//   kick = 6a-C "noisy", boom = 6b-C "noisy", snare = 6c-B "bright",
+//   rim = 6d-B "woodblock", hat = 6e-A "closed".
+// each voice takes an optional destination node (so a loop can route drums to their own bus)
+const DRUM = {
+  kick:  (d)=> play([1.7,0,90,.001,.03,.12,0,0,0,-15,0,0,0,.6,0,0,0,1,.05,0,-350],d),   // 6a-C noisy
+  boom:  (d)=> play([1.6,0,70,.002,.06,.26,0,0,0,-10,0,0,0,.5,0,0,0,1,.12,0,-250],d),   // 6b-C noisy
+  snare: (d)=> play([.5,.1,500,0,.015,.07,3,0,0,0,0,0,0,6,0,0,0,1,0,0,2200],d),         // 6c-B bright
+  rim:   (d)=> play([.5,0,900,0,.006,.04,2,0,0,0,0,0,0,0,0,0,0,1],d),                    // 6d-B woodblock
+  hat:   (d)=> play([.28,.1,7000,0,.002,.03,3,0,0,0,0,0,0,3,0,0,0,1,0,0,3000],d),        // 6e-A closed
+};
+
+// ── 6. DRUM VARIANT EXPLORER ──────────────────────────────────────────────
+// For each voice, ~5 param sets side by side. Click to audition; the last-clicked
+// per row shows its exact zzfx array so you can copy the winner. Loop toggle repeats
+// a variant so you can hear it in time. This is the "pick the right kick" workbench.
+let lastPicked = {}; // voice -> params, for the "copy pick" readout
+function variantCard(n, title, desc, variants){
+  const el = document.createElement('div'); el.className='card';
+  el.innerHTML = `<h2>${n} · ${title}</h2><p class="d">${desc}</p>`;
+  const row = document.createElement('div'); row.className='row'; el.appendChild(row);
+  const out = document.createElement('code'); out.className='snip'; out.textContent='// click a variant to audition; its params appear here';
+  const setPick = (label, p)=>{ lastPicked[title]=p; out.textContent = `// ${title} — "${label}"\nzzfx(${p.join(',')})`; };
+  for(const [label,p] of variants){
+    const b = btn('▷ '+label, '', ()=>{ play(p); setPick(label,p); });
+    // right-click a variant to loop it at ~110bpm so you can judge it in rhythm
+    b.oncontextmenu = (e)=>{ e.preventDefault(); const id='loop_'+title+'_'+label;
+      if(running[id]){ clearTimeout(running[id].t); delete running[id]; b.classList.remove('on'); b.textContent='▷ '+label; return; }
+      running[id]={}; b.classList.add('on'); b.textContent='■ '+label; setPick(label,p);
+      const tick=()=>{ if(!running[id])return; play(p); running[id].t=setTimeout(tick,545); }; tick();
+    };
+    row.appendChild(b);
+  }
+  el.appendChild(out); cards.appendChild(el);
+}
+// helper text once, above the variant cards
+(()=>{ const el=document.createElement('div'); el.className='card'; el.style.borderColor='#2f6b96';
+  el.innerHTML='<h2 style="color:#5cc8ff">Drum workbench</h2><p class="d">Left-click a variant to hear it once. <b style="color:#cdd6e4">Right-click to loop it</b> at ~110 BPM so you can judge it in rhythm (right-click again to stop). The exact <code style="color:#5cc8ff">zzfx(...)</code> for your last click shows under each row — copy the winner and tell me which per voice.</p>';
+  cards.appendChild(el); })();
+
+// KICKS — five DIFFERENT synthesis approaches (not just param tweaks), because what makes
+// a "thump vs note" is the method. Param slots:
+// [vol,rand,freq,attack,sustain,release,shape,shapeCurve,slide,deltaSlide,pitchJump,
+//  pitchJumpTime,repeat,noise,mod,bitcrush,delay,sustainVol,decay,tremolo,filter]
+variantCard('6a','Kick','FIVE synthesis methods, not just tweaks — because "thump vs note" comes from HOW the pitch/noise behaves. Loop each (right-click) and pick the one that reads as a drum.',[
+  // 1) 808 pitch-envelope: instant pitch JUMP down partway through (classic two-stage kick)
+  ['A 808-jump', [1.6,0,220,.001,.02,.1,0,0,0,0,-180,.03,0,0,0,0,0,1,.03]],
+  // 2) hard deltaSlide crash + click transient (attack near 0)
+  ['B crash',    [1.6,0,170,0,.02,.09,0,0,-1,-70,0,0,0,.03,0,0,0,1,.02]],
+  // 3) noise-heavy "acoustic" thump — the body is mostly filtered noise, minimal tone
+  ['C noisy',    [1.7,0,90,.001,.03,.12,0,0,0,-15,0,0,0,.6,0,0,0,1,.05,0,-350]],
+  // 4) bit-crushed / distorted punch (shapeCurve<1 = fatter, bitcrush adds grit)
+  ['D punch',    [1.5,0,140,.001,.02,.1,0,.6,-2,-40,0,0,0,.05,0,3,0,1,.03]],
+  // 5) tight click + fast drop, very short (techno kick)
+  ['E techno',   [1.6,0,190,0,.015,.08,0,0,-3,-55,0,0,0,.02,0,0,0,1,.01]],
+]);
+
+// BOOMS — same five methods, tuned lower/slower with more sub & longer tails.
+variantCard('6b','Boom / sub-kick','Same five methods, deeper and slower for a heartbeat pulse. More sub weight, longer tail — but still a THUMP, not a held bass note.',[
+  ['A 808-jump', [1.6,0,150,.002,.05,.22,0,0,0,0,-110,.05,0,0,0,0,0,1,.1]],
+  ['B crash',    [1.6,0,120,.001,.05,.2,0,0,-1,-40,0,0,0,.04,0,0,0,1,.08]],
+  ['C noisy',    [1.6,0,70,.002,.06,.26,0,0,0,-10,0,0,0,.5,0,0,0,1,.12,0,-250]],
+  ['D punch',    [1.5,0,100,.001,.04,.18,0,.6,-1.5,-28,0,0,0,.06,0,2,0,1,.08]],
+  ['E techno',   [1.6,0,130,0,.03,.15,0,0,-2,-40,0,0,0,.03,0,0,0,1,.05]],
+]);
+
+variantCard('6c','Snare / clap','Soft noise bursts, mid-band filtered. Variants span brightness, length, and how much tone vs noise. Ambient snares are quiet and airy, not cracky.',[
+  ['A soft',     [.5,.05,300,0,.02,.09,3,0,0,0,0,0,0,4,0,0,0,1,0,0,1200]],
+  ['B bright',   [.5,.1,500,0,.015,.07,3,0,0,0,0,0,0,6,0,0,0,1,0,0,2200]],
+  ['C clap',     [.5,.15,400,0,.01,.12,3,0,0,0,0,0,0,5,0,0,.02,1,0,0,1500]],
+  ['D toney',    [.5,.05,220,.002,.03,.1,2,0,0,0,0,0,0,3,0,0,0,1,0,0,900]],
+  ['E airy',     [.35,.2,600,0,.02,.16,3,0,0,0,0,0,0,7,0,0,.05,1,0,.3,3000]],
+]);
+
+variantCard('6d','Rim / click','Tight high clicks for accents & syncopation. Very short. Variants span pitch and a touch of tone vs pure click.',[
+  ['A clave',    [.5,0,1400,0,.005,.03,2,0,0,0,0,0,0,0,0,0,0,1]],
+  ['B woodblock',[.5,0,900,0,.006,.04,2,0,0,0,0,0,0,0,0,0,0,1]],
+  ['C tick',     [.45,0,2200,0,.003,.02,3,0,0,0,0,0,0,1,0,0,0,1]],
+  ['D pluck',    [.45,0,600,.001,.01,.05,1,0,-4,0,0,0,0,0,0,0,0,1]],
+  ['E blip',     [.4,0,1800,0,.004,.05,0,0,-8,0,0,0,0,0,0,0,0,1]],
+]);
+
+variantCard('6e','Hat','Short high noise. Variants span brightness, length (closed vs open), and filter. Keep these quiet — hats sit at the top.',[
+  ['A closed',   [.28,.1,7000,0,.002,.03,3,0,0,0,0,0,0,3,0,0,0,1,0,0,3000]],
+  ['B tight',    [.22,.1,9000,0,.001,.02,3,0,0,0,0,0,0,4,0,0,0,1,0,0,5000]],
+  ['C open',     [.22,.1,6500,0,.01,.13,3,0,0,0,0,0,0,2,0,0,0,1,0,.3,2500]],
+  ['D metallic', [.2,.05,8000,0,.003,.05,3,0,0,0,0,0,0,5,3,0,0,1,0,0,4000]],
+  ['E soft',     [.18,.2,5000,0,.004,.06,3,0,0,0,0,0,0,3,0,0,.03,1,0,.2,2000]],
+]);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FIXED DRUM LOOPS — hand-authored 16-step patterns (not procedural). Each grid row
+// is a voice; 'x' = hit, '.' = rest. Deliberate patterns with intentional space read
+// far better under a slow chord bed than random probability. Try each against card 2.
+// ═══════════════════════════════════════════════════════════════════════════
+// swing: fraction (0..~.3) that shifts every odd 16th later — humanises the groove.
+function loopCard(n, title, desc, bpm, grid, swing=0){
+  const el=document.createElement('div'); el.className='card';
+  el.innerHTML=`<h2>${n} · ${title}</h2><p class="d">${desc}</p>`;
+  const row=document.createElement('div'); row.className='row'; el.appendChild(row);
+  // visual grid
+  const gv=document.createElement('div'); gv.style.cssText='width:100%;margin:.6rem 0;font-size:.7rem;color:#6b7688;line-height:1.7;white-space:pre';
+  gv.textContent = Object.entries(grid).map(([v,p])=>v.padEnd(6)+p.replace(/x/g,'█').replace(/\./g,'·')).join('\n');
+  const id='loop'+n;
+  const b=document.createElement('button'); b.className='play'; b.textContent='▶ play loop'; b.dataset.label='▶ play loop';
+  b.onclick=()=>{ if(zzfxX.state==='suspended')zzfxX.resume();
+    if(running[id]){ clearTimeout(running[id].t); delete running[id]; b.classList.remove('on'); b.textContent='▶ play loop'; return; }
+    running[id]={}; b.classList.add('on'); b.textContent='■ stop'; let s=0;
+    const tick=()=>{ if(!running[id])return;
+      for(const [v,p] of Object.entries(grid)) if(p[s]==='x') DRUM[v]();
+      const base=15000/bpm; // 16th-note ms
+      // swing: hold odd (off-beat) steps a touch longer for a shuffled feel
+      running[id].t=setTimeout(tick, base * (s%2===1 ? 1+swing : 1-swing));
+      s=(s+1)%16;
+    };
+    tick();
+  };
+  row.appendChild(b);
+  el.appendChild(gv);
+  const snip=document.createElement('code'); snip.className='snip';
+  snip.textContent = `// ${bpm} BPM, 16 steps${swing?`, swing ${swing}`:''}\n`+Object.entries(grid).map(([v,p])=>`${v}: "${p}"`).join('\n');
+  el.appendChild(snip);
+  cards.appendChild(el);
+}
+
+loopCard('7','Deep pulse', 'The most minimal: a soft kick every beat, one open space. A grounding heartbeat and nothing else — lets the chords breathe. Slow.', 66, {
+  kick: 'x...x...x...x...',
+});
+
+loopCard('8','Dub techno', 'Kick on every beat + an offbeat hat "tsk" + a rim skip. The classic hypnotic dub-techno shuffle — steady but hypnotic, not busy.', 76, {
+  kick: 'x...x...x...x...',
+  hat:  '..x...x...x...x.',
+  rim:  '..........x.....',
+});
+
+loopCard('9','Downtempo', 'Chilled boom-bap: kick on 1 & the "and" of 3, snare on the backbeats (3 & 11), sparse hats. Head-nod tempo with lots of gap. Swung.', 72, {
+  kick: 'x.......x..x....',
+  snare:'....x.......x...',
+  hat:  'x.x.x.x.x.x.x.x.',
+}, .18);
+
+// ── DOWNTEMPO FAMILY (card 9 is the reference — these are siblings) ──────────
+// All swung boom-bap: running/offbeat hats + syncopated kick + backbeat snare. The
+// levers are kick placement, hat density, swing amount, and ghost hits.
+loopCard('10','Downtempo · heavier kick', 'Card 9 with a busier kick — adds a pickup kick before beat 3 for more push. Same swing, same backbeat snare.', 72, {
+  kick: 'x.......x.x.x...',
+  snare:'....x.......x...',
+  hat:  'x.x.x.x.x.x.x.x.',
+}, .18);
+
+loopCard('11','Downtempo · offbeat hats', 'Card 9 but hats only on the offbeats (the "and"s) instead of running — airier, more space between ticks. Adds a rim ghost for lift.', 74, {
+  kick: 'x.......x..x....',
+  snare:'....x.......x...',
+  hat:  '..x...x...x...x.',
+  rim:  '..............x.',
+}, .2);
+
+loopCard('12','Downtempo · deep swing', 'Heavier swing (.26) for a laid-back, "drunk" head-nod. Simpler kick, backbeat snare, running hats drag behind the beat.', 70, {
+  kick: 'x.........x.....',
+  snare:'....x.......x...',
+  hat:  'x.x.x.x.x.x.x.x.',
+}, .26);
+
+loopCard('13','Downtempo · double snare', 'A trip-hop lean: the second backbeat becomes a quick double-snare (snare + ghost) for a stumble. Sparse kick underneath.', 73, {
+  kick: 'x..........x....',
+  snare:'....x.......x.x.',
+  hat:  '..x...x...x...x.',
+}, .2);
+
+loopCard('14','Downtempo · rim-led', 'Rim clicks carry the groove instead of hats (softer, woodier top end) with the same swung kick+snare. Good when hats feel too bright over the pad.', 72, {
+  kick: 'x.......x..x....',
+  snare:'....x.......x...',
+  rim:  '..x...x...x...x.',
+}, .18);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PUTTING IT TOGETHER — chord-swell drift + deep-swing downtempo, balanced.
+// ═══════════════════════════════════════════════════════════════════════════
+(()=>{
+  const el=document.createElement('div'); el.className='card'; el.style.borderColor='#b48cff';
+  el.innerHTML='<h2 style="color:#b48cff">★ Combo · Chord-swell drift + Deep-swing loop</h2>'+
+    '<p class="d">Both locked to ONE clock (no drift; chord change lands on beat 1). Top sliders = mix + swell envelope. The green <b style="color:#4fd6a0">variation</b> row fights repetition: <b style="color:#cdd6e4">8-chord A/B</b> doubles the progression with a contrasting section · <b style="color:#cdd6e4">vary%</b> = chance to alter a voicing each pass · <b style="color:#cdd6e4">oct lift%</b> = chance a chord jumps up an octave · <b style="color:#cdd6e4">drift</b> = slow ± transpose that wanders over the progression.</p>';
+  const row=document.createElement('div'); row.className='row'; el.appendChild(row);
+
+  // dedicated drum bus so drums can sit under the pad
+  const drumBus = zzfxX.createGain(); drumBus.gain.value = .6; drumBus.connect(master);
+  let bpm=70, swing=.26, loopsPerChord=2;
+  let atk=1, rel=2, overlap=1, stagger=.05, susV=1; // chord envelope knobs (dialed-in defaults)
+  // variation knobs (anti-repetition):
+  let vary=0;     // % chance per pass to alter the voicing (drop or double a voice)
+  let octLift=0;  // % chance a whole chord jumps up an octave for one pass
+  let drift=0;    // slow transpose of the whole progression, ± semitones over the loop
+  let longProg=false; // use the 8-chord A/B progression instead of the 4-chord loop
+  const grid = { kick:'x.........x.....', snare:'....x.......x...', hat:'x.x.x.x.x.x.x.x.' };
+  const root=53;
+  const chords4=[[0,7,10,15],[0,3,10,14],[-2,5,8,12],[0,7,12,17]]; // original 4
+  // 8-chord A/B: first 4 = the original "home" section, next 4 = a contrasting "away"
+  // section (higher, brighter) before returning — more journey, less loop.
+  const chords8=[...chords4, [5,8,12,17], [3,10,14,19], [7,10,15,22], [0,5,12,17]];
+
+  const b=document.createElement('button'); b.className='play'; b.textContent='▶ play combo'; b.style.borderColor='#b48cff';
+  b.onclick=()=>{
+    if(zzfxX.state==='suspended')zzfxX.resume();
+    const id='combo';
+    if(running[id]){ clearTimeout(running[id].t); delete running[id]; b.classList.remove('on'); b.textContent='▶ play combo'; return; }
+    b.classList.add('on'); b.textContent='■ stop combo';
+    // ONE master clock (the drum sequencer). The chord fires from inside it on the downbeat
+    // of every Nth loop, so chords & drums can NEVER drift apart — the switch always lands
+    // exactly on beat 1. (Swing cancels over a full 16 steps, so loops stay period-stable.)
+    running[id]={}; let s=0, loop=0, ci=0;
+    const swell=()=>{
+      const prog = longProg ? chords8 : chords4;
+      let ch = [...prog[ci % prog.length]];
+      // --- variation techniques (each independently dialable) ---
+      // register drift: slow ± transpose that wanders over ~1 minute, so the whole thing
+      // slowly rises/falls instead of sitting in one spot.
+      const dr = Math.round(Math.sin(ci/prog.length*Math.PI) * drift);
+      // voicing variation: occasionally drop the top voice or double one an octave up,
+      // so the same chord doesn't sound identical every pass.
+      if(Math.random() < vary){ Math.random()<.5 ? ch.pop() : ch.push(ch[1]+12); }
+      // octave lift: occasionally raise the whole chord an octave for one pass (a lift).
+      const oct = Math.random() < octLift ? 12 : 0;
+      ci++;
+      const loopLen = 16*(15000/bpm)/1000;         // seconds per loop (swing cancels)
+      const period = loopsPerChord*loopLen;
+      const sus = Math.max(.1, period + overlap - atk - rel);
+      ch.forEach(semi=>{ const hz=midiHz(root+semi+dr+oct);
+        const a = atk*(1 + (Math.random()-.5)*2*stagger); // per-voice attack jitter = organic bloom
+        play([.13,0,hz,a,sus,rel,0,0,0,0,0,0,0,0,0,0,0,susV,0,0]);
+        play([.1,0,hz*1.005,a,sus,rel,0,0,0,0,0,0,0,0,0,0,0,susV,0,0]); });
+    };
+    const tick=()=>{ if(!running[id])return;
+      // fire DRUMS FIRST (cheap, short) so their timing is exact...
+      for(const [v,p] of Object.entries(grid)) if(p[s]==='x') DRUM[v](drumBus);
+      // ...then the chord swell, deferred off the beat: rendering 8 long buffers is heavy
+      // and would otherwise block the main thread and push the downbeat drums late.
+      if(s===0){ if(loop % loopsPerChord === 0) setTimeout(swell,0); loop++; }
+      const base=15000/bpm;
+      running[id].t=setTimeout(tick, base*(s%2===1?1+swing:1-swing));
+      s=(s+1)%16;
+    };
+    tick();
+  };
+  row.appendChild(b);
+
+  const ctl=document.createElement('div'); ctl.style.cssText='display:flex;flex-wrap:wrap;gap:.5rem;width:100%;margin-top:.6rem';
+  ctl.append(
+    slider(0,100,60,'drums %', v=>drumBus.gain.value=v/100),
+    slider(56,90,70,'BPM', v=>bpm=v),
+    slider(0,40,26,'swing', v=>swing=v/100),
+    slider(1,4,2,'loops/chord', v=>loopsPerChord=v),
+    slider(1,60,10,'attack ×.1s', v=>atk=v/10),
+    slider(1,80,20,'release ×.1s', v=>rel=v/10),
+    slider(-20,60,10,'overlap ×.1s', v=>overlap=v/10),
+    slider(0,80,5,'stagger %', v=>stagger=v/100),
+    slider(20,100,100,'sus vol %', v=>susV=v/100),
+  );
+  row.appendChild(ctl);
+
+  // anti-repetition variation controls (second row, labelled)
+  const vlab=document.createElement('div'); vlab.style.cssText='width:100%;color:#4fd6a0;font-size:.72rem;margin-top:.5rem'; vlab.textContent='variation (fights repetition):';
+  row.appendChild(vlab);
+  const vctl=document.createElement('div'); vctl.style.cssText='display:flex;flex-wrap:wrap;gap:.5rem;width:100%;margin-top:.3rem';
+  const progBtn=document.createElement('button'); progBtn.textContent='4-chord loop';
+  progBtn.onclick=()=>{ longProg=!longProg; progBtn.textContent=longProg?'8-chord A/B':'4-chord loop'; progBtn.classList.toggle('on',longProg); };
+  vctl.append(
+    progBtn,
+    slider(0,100,0,'vary %', v=>vary=v/100),
+    slider(0,100,0,'oct lift %', v=>octLift=v/100),
+    slider(0,12,0,'drift ±semi', v=>drift=v),
+  );
+  row.appendChild(vctl);
+
+  const snip=document.createElement('code'); snip.className='snip';
+  snip.textContent='// ONE clock: drum step 0 of every Nth loop also fires the chord swell -> zero drift.\n'+
+    '// Transition knobs shape the swell: attack (bloom-in), release (tail-off), overlap\n'+
+    '// (voice length vs period: + = crossfade, - = gap of silence), stagger (per-voice\n'+
+    '// attack jitter = organic), sus vol (how much it dips before release).';
+  el.appendChild(snip);
+  cards.appendChild(el);
+})();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FIX · Smooth chord transitions
+// The "sounds wrong at the switch" is the OLD chord (still in its long release)
+// smearing against the NEW one. Worst case C1->C2 shares 0 notes / 6 clashy intervals.
+// Two fixes, toggleable: (1) shorten release so chords don't overlap; (2) voice-led
+// chords that share notes so any overlap stays consonant.
+// ═══════════════════════════════════════════════════════════════════════════
+(()=>{
+  const el=document.createElement('div'); el.className='card'; el.style.borderColor='#4fd6a0';
+  el.innerHTML='<h2 style="color:#4fd6a0">✓ Fix · Smooth chord transitions</h2>'+
+    '<p class="d">A/B the transition problem. <b style="color:#cdd6e4">Original</b> = card 2 as-is (long release overlaps + mismatched voicings → smear). <b style="color:#cdd6e4">Fixed</b> = voice-led chords sharing common tones + release trimmed so the old chord clears before the new one lands. Same 8s pace.</p>';
+  const row=document.createElement('div'); row.className='row'; el.appendChild(row);
+  const root=53;
+  // ORIGINAL voicings (mismatched)
+  const orig=[[0,7,10,15],[0,3,10,14],[-2,5,8,12],[0,7,12,17]];
+  // VOICE-LED voicings: an Fm-centred progression where each chord keeps 2-3 common
+  // tones with its neighbour, so overlap is consonant. (Fm - Db - Ab - Eb-ish)
+  const led=[[0,3,7,12],[0,3,8,12],[0,5,8,15],[-2,3,7,15]];
+  const mkPlayer=(id, chords, rel)=>{
+    let ci=0;
+    const swell=()=>{ if(!running[id])return;
+      const ch=chords[ci++%chords.length];
+      ch.forEach(semi=>{ const hz=midiHz(root+semi);
+        // attack 3 + sustain 2 + release `rel`; total = 5+rel. rel<=3 => <=8s => no overlap
+        play([.13,0,hz,3,2,rel,0,0,0,0,0,0,0,0,0,0,0,1,0,0]);
+        play([.1,0,hz*1.005,3,2,rel,0,0,0,0,0,0,0,0,0,0,0,1,0,0]); });
+      running[id].t=setTimeout(swell,8000);
+    };
+    swell();
+  };
+  const mkBtn=(label,id,chords,rel)=>{
+    const b=document.createElement('button'); b.className='play'; b.textContent='▶ '+label;
+    b.onclick=()=>{ if(zzfxX.state==='suspended')zzfxX.resume();
+      if(running[id]){ clearTimeout(running[id].t); delete running[id]; b.classList.remove('on'); b.textContent='▶ '+label; return; }
+      running[id]={}; b.classList.add('on'); b.textContent='■ '+label; mkPlayer(id,chords,rel);
+    };
+    return b;
+  };
+  row.append(
+    mkBtn('Original (overlap smear)', 'fixOrig', orig, 4),
+    mkBtn('Fixed (voice-led, trimmed)', 'fixNew', led, 2.6),
+  );
+  const snip=document.createElement('code'); snip.className='snip';
+  snip.textContent='// voice-led chords (share common tones) + release 2.6 so total len (3+2+2.6=7.6s) < 8s pace\n'+
+    'const chords=[[0,3,7,12],[0,3,8,12],[0,5,8,15],[-2,3,7,15]] // Fm-centred, smooth voice-leading\n'+
+    'zzfx(.13,0,midiHz(root+semi),3,2,2.6,,,,,,,,,,,,1)  // attack 3, sustain 2, release 2.6';
+  el.appendChild(snip);
+  cards.appendChild(el);
+})();
+
+// ─────────────────────────────────────────────────────────────────────────
+// tiny UI helpers
+// ─────────────────────────────────────────────────────────────────────────
+function btn(label, cls, fn){ const b=document.createElement('button'); b.className=cls; b.textContent=label; b.onclick=()=>{ if(zzfxX.state==='suspended')zzfxX.resume(); fn(); }; return b; }
+function slider(min,max,def,name,fn){
+  const wrap=document.createElement('span'); wrap.style.cssText='display:inline-flex;align-items:center;gap:.3rem';
+  const l=document.createElement('label'); l.className='k'; l.textContent=name; wrap.appendChild(l);
+  const r=document.createElement('input'); r.type='range'; r.min=min; r.max=max; r.value=def; r.style.width='90px';
+  const v=document.createElement('span'); v.className='val'; v.textContent=def;
+  r.oninput=()=>{ v.textContent=r.value; fn(+r.value); };
+  wrap.append(r,v); return wrap;
+}
+function btnLoop(id, row, label, startFn){
+  const b=document.createElement('button'); b.className='play'; b.textContent=label; b.dataset.label=label;
+  b.onclick=()=>{ if(zzfxX.state==='suspended')zzfxX.resume(); toggleLoop(id,b,startFn); };
+  row.appendChild(b);
+}
+function sel(opts, fn, name){
+  const wrap=document.createElement('span');
+  const l=document.createElement('label'); l.className='k'; l.textContent=name+':'; wrap.appendChild(l);
+  const s=document.createElement('select'); s.style.cssText='background:#1b2536;color:#cdd6e4;border:1px solid #2b3a52;border-radius:6px;padding:.35rem;font-family:inherit;font-size:.75rem;margin-left:.3rem';
+  opts.forEach(o=>{ const op=document.createElement('option'); op.value=o; op.textContent=o; s.appendChild(op); });
+  s.onchange=()=>fn(s.value); wrap.appendChild(s); return wrap;
+}
+</script>
