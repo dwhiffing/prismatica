@@ -1,5 +1,7 @@
 import { build } from 'esbuild';
 import { readFileSync } from 'fs';
+import { minify as terser } from 'terser';
+import { Packer } from 'roadroller';
 
 // Property names that reach a Web/DOM/builtin API (or an HTML data-* attribute) and
 // therefore MUST NOT be renamed by mangleProps. Everything NOT in this closed set is
@@ -12,13 +14,14 @@ const RESERVE = new RegExp('^(' + [
   'length', 'min', 'max', 'abs', 'sin', 'cos', 'tan', 'atan2', 'sqrt', 'hypot', 'sign', 'floor',
   'round', 'ceil', 'PI', 'SQRT2', 'random', 'from', 'push', 'pop', 'map', 'filter',
   'some', 'find', 'sort', 'includes', 'slice', 'indexOf', 'set',
+  'forEach', 'split', 'join', 'concat', 'reverse', 'get', // Array/String/WeakMap methods
   // canvas 2d context + gradients/patterns
   'fillStyle', 'strokeStyle', 'lineWidth', 'globalAlpha', 'globalCompositeOperation',
   'beginPath', 'closePath', 'moveTo', 'lineTo', 'stroke', 'fill', 'fillRect',
   'strokeRect', 'rect', 'clip', 'save', 'restore', 'translate', 'scale', 'rotate',
   'arc', 'fillText', 'textAlign', 'setLineDash', 'lineDashOffset', 'lineCap',
   'lineJoin', 'createRadialGradient', 'createLinearGradient', 'addColorStop', 'createPattern', 'getImageData',
-  'putImageData', 'getChannelData', 'data', 'drawImage', 'clearRect',
+  'putImageData', 'createImageData', 'getChannelData', 'data', 'drawImage', 'clearRect',
   // canvas / dom element + window + events
   'width', 'height', 'getElementById', 'getContext', 'createElement', 'innerHTML', 'onclick', 'dataset',
   'appendChild', 'remove', 'cssText', 'body', 'opacity',
@@ -29,12 +32,16 @@ const RESERVE = new RegExp('^(' + [
   // WebAudio
   'createBuffer', 'createBufferSource', 'createGain', 'destination', 'connect',
   'disconnect', 'start', 'resume', 'loop', 'buffer', 'gain', 'value',
+  // timing
+  'now',
   // localStorage key + HTML data-t attribute
   'm', 't',
   // building/entity type codes: keys of R/COST/BUILD/ENTITIES/COL, but ALSO the runtime
   // string values of BType/EType (R[b.t], ENTITIES[n.k], data-t attrs). The record keys
   // must stay literal so the string-keyed lookups still resolve.
-  'S', 'L', 'M', 'T', 'N', 'N2', 'N3', 'E', 'X', '_',
+  'S', 'L', 'M', 'T', 'E', 'X', '_',
+  // EType model keys (ENTITIES/R lookups via literal strings n.k / b.ek)
+  'rockLarge', 'rockMedium', 'rockSmall', 'crystalR', 'crystalG', 'crystalB',
 ].join('|') + ')$');
 
 // Bundle src/game.ts and inline it into src/index.html.
@@ -61,6 +68,33 @@ export async function bundle({ minify = true } = {}) {
     define: { DEV: String(!minify), MINIMAP: 'false', FOG: 'true', DEVTOOLS: String(!minify) },
     write: false,
   });
-  const js = res.outputFiles[0].text.trim();
-  return readFileSync('src/index.html', 'utf8').replace('__JS__', js);
+  let js = res.outputFiles[0].text.trim();
+  // Release only: a second minify pass with Terser on esbuild's output. esbuild is fast but
+  // conservative; Terser's multi-pass compressor (with the unsafe-math/arrow transforms that
+  // are safe for this self-contained game) squeezes another ~580 gzipped bytes out. Dev skips
+  // it to keep rebuilds instant. Property names are already mangled by esbuild (mangleProps);
+  // toplevel var mangling here shortens the remaining local/global identifiers.
+  if (minify) {
+    const out = await terser(js, {
+      compress: { passes: 3, unsafe: true, unsafe_math: true, unsafe_arrows: true, booleans_as_integers: true },
+      mangle: { toplevel: true },
+      format: { comments: false },
+    });
+    if (out.error) throw out.error;
+    js = out.code;
+    // Release only: Roadroller re-packs the minified JS with a context-mixing arithmetic
+    // coder into a tiny self-extracting `eval` payload. It beats gzip/DEFLATE on JS by ~1KB
+    // here; the resulting HTML is still gzipped by build.js for the size check. Skipped in
+    // dev (it's slow and would obscure stack traces). Set ROADROLLER=0 to bypass for debugging.
+    if (process.env.ROADROLLER !== '0') {
+      const packer = new Packer([{ data: js, type: 'js', action: 'eval' }], {});
+      await packer.optimize(1);
+      const { firstLine, secondLine } = packer.makeDecoder();
+      js = firstLine + secondLine;
+    }
+  }
+  // Use a replacer FUNCTION, not a string: a string replacement interprets `$&`, `$'`, `$$`
+  // etc., and the minified/packed code contains `$` chars, which would corrupt the output
+  // (and can leave `__JS__` un-substituted). A function returns `js` verbatim.
+  return readFileSync('src/index.html', 'utf8').replace('__JS__', () => js);
 }

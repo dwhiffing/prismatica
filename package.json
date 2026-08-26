@@ -12,6 +12,8 @@
   "devDependencies": {
     "@gfx/zopfli": "^1.0.15",
     "esbuild": "^0.24.0",
+    "roadroller": "^2.1.0",
+    "terser": "^5.51.0",
     "typescript": "^5.6.0"
   }
 }

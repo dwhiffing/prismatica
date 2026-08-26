@@ -59,16 +59,12 @@ export const toggleMute = () => {
 // A chord-swell pad + a swung downtempo drum loop, both driven off ONE step clock so
 // they never drift. Not a pre-rendered loop — scheduled live, so it never repeats a
 // fixed buffer. Routed through musicGain, so muteState controls it (music in state 2).
-const DRUMS: Record<string, ZzfxParams> = {
-  kick: [1.7, 0, 90, .001, .03, .12, 0, 0, 0, -15, 0, 0, 0, .6, 0, 0, 0, 1, .05, 0, -350],
-  snare: [.5, .1, 500, 0, .015, .07, 3, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 1, 0, 0, 2200],
-  hat: [.28, .1, 7000, 0, .002, .03, 3, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 1, 0, 0, 3000],
-}
-// 16-step swung loop; 'x' = hit. kick/snare/hat.
-const PAT: [string, string][] = [
-  ['kick', 'x.........x.....'],
-  ['snare', '....x.......x...'],
-  ['hat', 'x.x.x.x.x.x.x.x.'],
+// 16-step swung loop, one row per voice: [zzfx params, 'x'=hit pattern]. Params are inlined
+// (not a name→params record) so mangleProps can't break a string-keyed lookup. kick/snare/hat.
+const PAT: [ZzfxParams, string][] = [
+  [[1.7, 0, 90, .001, .03, .12, 0, 0, 0, -15, 0, 0, 0, .6, 0, 0, 0, 1, .05, 0, -350], 'x.........x.....'],
+  [[.5, .1, 500, 0, .015, .07, 3, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 1, 0, 0, 2200], '....x.......x...'],
+  [[.28, .1, 7000, 0, .002, .03, 3, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 1, 0, 0, 3000], 'x.x.x.x.x.x.x.x.'],
 ]
 // chord voicings (semitone offsets from root). home = 0-3, away = 4-7.
 const CHORDS = [[0, 7, 10, 15], [0, 3, 10, 14], [-2, 5, 8, 12], [0, 7, 12, 17],
@@ -125,7 +121,7 @@ export const playMusic = () => {
     }
   }
   const tick = () => {
-    for (const [v, p] of PAT) if (p[s] === 'x') zzfxP(zzfxG(...DRUMS[v]), drumBus)
+    for (const [params, p] of PAT) if (p[s] === 'x') zzfxP(zzfxG(...params), drumBus)
     // first swell after two full drum loops (loop 2), then every LOOPS_PER_CHORD loops after.
     if (s === 0) { if (loop > 0 && loop % LOOPS_PER_CHORD === 0) swell(); loop++ }
     const base = 15000 / BPM
