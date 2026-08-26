@@ -1,7 +1,6 @@
 // ZzFX - Zuper Zmall Zound Zynth - Micro Edition
 // MIT License - Copyright 2019 Frank Force
 // https://github.com/KilledByAPixel/ZzFX
-import { music } from './sounds'
 import { S } from './state'
 
 // This is a minified build of zzfx for use in size coding projects.
@@ -56,18 +55,86 @@ export const toggleMute = () => {
   if (musicGain) musicGain.gain.value = S.muteState === 2 ? 1 : 0 // music only in "all sound"
 }
 
-export const playMusic = () => {
-  // @ts-ignore
-  const m = zzfxM(...music)
-  // @ts-ignore
-  const musicNode = zzfxP(...m)
+// ── Procedural ambient score ────────────────────────────────────────────────
+// A chord-swell pad + a swung downtempo drum loop, both driven off ONE step clock so
+// they never drift. Not a pre-rendered loop — scheduled live, so it never repeats a
+// fixed buffer. Routed through musicGain, so muteState controls it (music in state 2).
+const DRUMS: Record<string, ZzfxParams> = {
+  kick: [1.7, 0, 90, .001, .03, .12, 0, 0, 0, -15, 0, 0, 0, .6, 0, 0, 0, 1, .05, 0, -350],
+  snare: [.5, .1, 500, 0, .015, .07, 3, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 1, 0, 0, 2200],
+  hat: [.28, .1, 7000, 0, .002, .03, 3, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 1, 0, 0, 3000],
+}
+// 16-step swung loop; 'x' = hit. kick/snare/hat.
+const PAT: [string, string][] = [
+  ['kick', 'x.........x.....'],
+  ['snare', '....x.......x...'],
+  ['hat', 'x.x.x.x.x.x.x.x.'],
+]
+// chord voicings (semitone offsets from root). home = 0-3, away = 4-7.
+const CHORDS = [[0, 7, 10, 15], [0, 3, 10, 14], [-2, 5, 8, 12], [0, 7, 12, 17],
+  [5, 8, 12, 17], [3, 10, 14, 19], [7, 10, 15, 22], [0, 5, 12, 17]]
+// section sequence: home, home, away (each block = its 4 chords), then repeat.
+const SEQ = [0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7]
+const ROOT = 53, BPM = 70, SWING = .26, DRUMVOL = .6
+const LOOPS_PER_CHORD = 2 // how many 16-step loops each chord holds
+// chord-swell envelope (seconds). sustain is DERIVED so total voice length
+// (ATK + sustain + REL) = chordPeriod + OVERLAP. OVERLAP > 0 => chords crossfade;
+// OVERLAP < 0 => a gap of near-silence between chords.
+const ATK = 1, REL = 2, OVERLAP = 1
 
-  musicGain = zzfxX.createGain()
-  musicGain.connect(zzfxX.destination)
-  musicNode.disconnect()
-  musicNode.connect(musicGain)
-  musicNode.loop = true
-  musicGain.gain.value = S.muteState === 2 ? 1 : 0 // music only in "all sound"
+// Chord buffers, rendered once at load (renderMusic). Each chord voice is a ~6s buffer,
+// identical every time it plays, so pre-rendering makes playback a cheap BufferSource
+// replay with zero runtime hitch. Rendering is pure math (no gesture needed) — only
+// playback needs a resumed AudioContext, which happens on first input via playMusic().
+let cache: AudioBuffer[][]
+export const renderMusic = () => {
+  const loopLen = 16 * (15000 / BPM) / 1000              // seconds per loop (swing cancels)
+  const sus = Math.max(.1, LOOPS_PER_CHORD * loopLen + OVERLAP - ATK - REL) // derived sustain
+  // defer a tick so the menu overlay paints before this ~0.5s blocking render
+  setTimeout(() => {
+    cache = CHORDS.map((chord) => chord.map((semi) => {
+      const base = 440 * 2 ** ((ROOT + semi - 69) / 12)
+      const a = zzfxG(.13, 0, base, ATK, sus, REL, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0)          // fundamental
+      const b = zzfxG(.1, 0, base * 1.005, ATK, sus, REL, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0)   // detune twin
+      const buf = zzfxX.createBuffer(1, a.length, zzfxR)
+      const d = buf.getChannelData(0)
+      d.set(a); for (let i = 0; i < b.length; i++) d[i] += b[i] // sum both voices into one buffer
+      return buf
+    }))
+  })
+}
+
+// chord swells start OFF (menu shows drums only); startChords() arms them so they begin
+// at chord 0 on the next 2-loop downbeat.
+let chordsOn = false
+let ciRef = { c: 0 } // chord index, resettable when chords are (re)armed
+export const startChords = () => { ciRef.c = 0; chordsOn = true }
+
+export const playMusic = () => {
+  const mg = musicGain = zzfxX.createGain()
+  mg.connect(zzfxX.destination)
+  mg.gain.value = S.muteState === 2 ? 1 : 0 // music only in "all sound"
+  const drumBus = zzfxX.createGain()
+  drumBus.gain.value = DRUMVOL
+  drumBus.connect(mg)
+
+  let s = 0, loop = 0
+  const swell = () => {
+    if (!cache) return // buffers not rendered yet (shouldn't happen — rendered at load)
+    for (const buf of cache[SEQ[ciRef.c++ % SEQ.length]]) {
+      const src = zzfxX.createBufferSource()
+      src.buffer = buf; src.connect(mg); src.start()
+    }
+  }
+  const tick = () => {
+    for (const [v, p] of PAT) if (p[s] === 'x') zzfxP(zzfxG(...DRUMS[v]), drumBus)
+    // swells only once armed (startChords), on a 2-loop downbeat, from chord 0
+    if (s === 0) { if (chordsOn && loop % LOOPS_PER_CHORD === 0) swell(); loop++ }
+    const base = 15000 / BPM
+    setTimeout(tick, base * (s % 2 ? 1 + SWING : 1 - SWING))
+    s = (s + 1) % 16
+  }
+  tick()
 }
 
 export function zzfx(...z: ZzfxParams): AudioBufferSourceNode {
@@ -75,12 +142,12 @@ export function zzfx(...z: ZzfxParams): AudioBufferSourceNode {
   return zzfxP(zzfxG(...z))
 }
 
-export function zzfxP(...samples: Float32Array[]): AudioBufferSourceNode {
-  const buffer = zzfxX.createBuffer(samples.length, samples[0].length, zzfxR)
+export function zzfxP(sample: Float32Array, dest?: AudioNode): AudioBufferSourceNode {
+  const buffer = zzfxX.createBuffer(1, sample.length, zzfxR)
+  buffer.getChannelData(0).set(sample)
   const source = zzfxX.createBufferSource()
-  samples.map((d, i) => buffer.getChannelData(i).set(d))
   source.buffer = buffer
-  source.connect(zzfxX.destination)
+  source.connect(dest || zzfxX.destination)
   source.start()
   return source
 }
@@ -227,6 +294,3 @@ export function zzfxG(
 
   return Float32Array.from(b)
 }
-
-// @ts-ignore
-export const zzfxM=(n,f,t,e=125)=>{let l,o,z,r,g,h,x,a,u,c,d,i,m,p,G,M=0,R=[],b=[],j=[],k=0,q=0,s=1,v={},w=zzfxR/e*60>>2;for(;s;k++)R=[s=a=d=m=0],t.map((e,d)=>{for(x=f[e][k]||[0,0,0],s|=!!f[e][k],G=m+(f[e][0].length-2-!a)*w,p=d==t.length-1,o=2,r=m;o<x.length+p;a=++o){for(g=x[o],u=o==x.length+p-1&&p||c!=(x[0]||0)|g|0,z=0;z<w&&a;z++>w-99&&u?i+=(i<1)/99:0)h=(1-i)*R[M++]/2||0,b[r]=(b[r]||0)-h*q+h,j[r]=(j[r++]||0)+h*q+h;g&&(i=g%1,q=x[1]||0,(g|=0)&&(R=v[[c=x[M=0]||0,g]]=v[[c,g]]||(l=[...n[c]],l[2]*=2**((g-12)/12),g>0?zzfxG(...l):[])))}m=G});return[b,j]}

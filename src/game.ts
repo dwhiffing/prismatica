@@ -1,5 +1,3 @@
-// Grid — tiny base-building/defense prototype (dimetric low-poly 3D).
-// Entry point: wires input, the reset, and the main loop (sim + render).
 import {
   BUILD,
   COST,
@@ -18,22 +16,14 @@ import { miscSounds } from './sounds'
 import { C, LT, resize, S, SPAWN, V } from './state'
 import { stepSim } from './sim'
 import { drawUI } from './ui'
-import { playMusic, toggleMute, zzfx, zzfxX } from './zzfx'
+import { playMusic, renderMusic, startChords, toggleMute, zzfx, zzfxX } from './zzfx'
 import type { BType, Building, EType } from './types'
 
 addEventListener('resize', resize)
 
-// start the looped music on the first user gesture — browsers keep the AudioContext
-// suspended until an interaction, so "on load" music must begin here.
-let audioOn = false
-function startAudio() {
-  if (audioOn) return
-  audioOn = true
-  zzfxX.resume()
-  playMusic()
-}
-addEventListener('pointerdown', startAudio)
-addEventListener('keydown', startAudio)
+// render the music buffers right away (pure math, no gesture needed). Playback needs a
+// resumed AudioContext, so it starts on the first user gesture — buffers are ready by then.
+renderMusic()
 
 // build a Building record with the shared defaults (energy 0, hp 20, no cooldown)
 const mkB = (t: BType, x: number, y: number, bp?: number): Building => ({ t, x, y, e: 0, hp: 20, cd: 0, bp })
@@ -116,8 +106,13 @@ const tryBuild = (x: number, y: number) => {
   drawUI()
   return true
 }
+let audioOn = 0 // true after the first user gesture (needed to start music)
 C.onpointerdown = (e: PointerEvent) => {
   if (e.button) return
+
+  // first click: just start the music (drums). Return so nothing else happens yet.
+  if (audioOn===0) { audioOn++; zzfxX.resume(); playMusic(); startChords(); return }
+  // while on the title, clicks never select/build/pan. The first (audioOn) started the music;
   downX = mx(e)
   downY = my(e)
   panX = S.camX
