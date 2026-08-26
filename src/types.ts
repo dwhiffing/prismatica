@@ -31,6 +31,8 @@ export interface Building extends Pt {
   ek?: EType // entity model override (used by color crystals to render a crystal instead of link)
   rush?: boolean // "rush build": in-range links were rerouted to feed this; cleared when built
   filt?: number // link color filter: 0=any(yellow), else only energy with this bit (4=R,2=G,1=B)
+  drain?: number // title menu only: energy arriving here is consumed (never forwarded/bounced)
+  emit?: number // title menu only: this dot is its letter's sole energy source (see spray)
 }
 export interface ResNode extends Pt {
   amt: number // resources remaining
@@ -41,7 +43,7 @@ export interface ResNode extends Pt {
 }
 export interface Enemy extends Pt {
   hp: number
-  target: Building | null
+  target?: Building | null
 }
 export interface Pulse {
   x: number

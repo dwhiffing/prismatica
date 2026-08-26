@@ -20,8 +20,16 @@ export function unproject(mx: number, my: number): Pt {
   return { x: (xz + xmz) / 2, y: (xz - xmz) / 2 }
 }
 
+// rnd(): Math.random by default. Set a non-zero `seed` (via setSeed) for a deterministic
+// sequence — used to make the title's mineral scatter identical every load. setSeed(0)
+// restores true randomness for gameplay. The seeded path is a sin-hash: fract(sin(seed++)·1e4),
+// which is cheaper (short literals, reuses Math.sin/floor) than an LCG and well-distributed.
+let seed = 0
+export const setSeed = (n: number) => { seed = n }
 export function rnd() {
-  return Math.random()
+  if (!seed) return Math.random()
+  const x = Math.sin(seed++) * 1e4
+  return x - Math.floor(x)
 }
 export function dist2(a: Pt, b: Pt) {
   return (a.x - b.x) ** 2 + (a.y - b.y) ** 2

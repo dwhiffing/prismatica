@@ -26,6 +26,7 @@ declare const FOG: boolean
 import { ENTITIES, type Entity } from './models'
 import { LT, S, SUN, V, X } from './state'
 import { chainHead, towerChainLen } from './sim'
+import { intro, INTRO_HOLD, titling, trans } from './game'
 import type { Face, V3 } from './types'
 
 // link color-filter tint, indexed by the filter bitmask (0=any/yellow, 1=B, 2=G, 4=R)
@@ -171,11 +172,11 @@ function shadowPoints(ent: Entity, L: V3): [number, number][] {
 // sub-path to the CURRENT path — no fill. All shadows are collected into a single path
 // and filled once (see render) so overlaps merge flat instead of stacking darker.
 function addShadow(ent: Entity, gx: number, gz: number, s: number) {
-  const su = Math.max(LT.shFloor, SUN.up) // floor so night keeps a short cast shadow
+  const su = Math.max(0.73, SUN.up) // floor (0.73) so night keeps a short cast shadow
   const a = (LT.dayT - 0.25) * Math.PI * 2
   const L = norm([
-    -Math.cos(a) * LT.shLean * su,
-    -(0.5 + LT.shLen * (1 - su)),
+    -Math.cos(a) * 1.5 * su, // shLean 1.5
+    -(0.5 + 1.5 * (1 - su)), // shLen 1.5
     0.7 * su,
   ])
   const pts = shadowPoints(ent, L)
@@ -289,7 +290,7 @@ export function render() {
     // cast drop shadows: collect every silhouette into ONE path, then fill once so
     // overlapping shadows merge into a single flat region (no darker overlaps).
     X.fillStyle = '#000'
-    X.globalAlpha = LT.shAlpha + 0.06 * SUN.up
+    X.globalAlpha = 0.2 + 0.06 * SUN.up // shAlpha 0.2
     X.beginPath()
     for (const n of nodes)
       if ((n.ds || 0) > 0.02 && onScreen(n)) addShadow(ENTITIES[n.k], n.x, n.y, n.ds!)
@@ -373,7 +374,7 @@ export function render() {
   X.lineWidth = 2
   X.setLineDash([6, 6])
   X.lineDashOffset = -S.t * 12 // marches along the line over time
-  for (const b of buildings)
+  if (!titling) for (const b of buildings)
     if (b.route && buildings.includes(b.route)) {
       const [ax, ay] = g(b.x, b.y, 6),
         [bx, by] = g(b.route.x, b.route.y, 6)
@@ -510,8 +511,7 @@ export function render() {
     const rr = REVEAL * S.ZOOM
     for (const p of S.revealed) {
       const [sx, sy] = iso(p.x, 0, p.y)
-      // radial gradient: fully erase the inner 55%, feather out to transparent at the rim
-      const gr = FX.createRadialGradient(sx, sy, rr * 0.8, sx, sy, rr)
+      const gr = FX.createRadialGradient(sx, sy, 0, sx, sy, rr)
       gr.addColorStop(0, '#000'); gr.addColorStop(1, 'rgba(0,0,0,0)')
       FX.fillStyle = gr
       FX.beginPath(); FX.arc(sx, sy, rr, 0, 7); FX.fill()
@@ -520,15 +520,11 @@ export function render() {
     X.drawImage(FC, 0, 0)
   }
 
-  // energy count labels above powered buildings
-  X.fillStyle = '#fff'
-  X.textAlign = 'center'
-  for (const b of buildings)
-    if (b.e > 0) {
-      const [sx, sy] = g(b.x, b.y, 26)
-      X.fillText('' + b.e, sx, sy)
-    }
-  X.textAlign = 'left'
   if (MINIMAP) drawMinimap()
   if (false) drawThreat()
+
+  // one full-screen black fill for both fades: the start-transition (trans 0→1 covers the
+  // title, 1→2 reveals the game) and the page-load intro (hold black INTRO_HOLD, then fade out).
+  const f = Math.min(1, Math.max(trans < 1 ? trans : 2 - trans, INTRO_HOLD + 1 - intro))
+  if (f > 0) { X.globalAlpha = f; X.fillStyle = '#000'; X.fillRect(0, 0, V.W, V.Hh); X.globalAlpha = 1 }
 }

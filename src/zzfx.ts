@@ -104,11 +104,9 @@ export const renderMusic = () => {
   })
 }
 
-// chord swells start OFF (menu shows drums only); startChords() arms them so they begin
-// at chord 0 on the next 2-loop downbeat.
-let chordsOn = false
-let ciRef = { c: 0 } // chord index, resettable when chords are (re)armed
-export const startChords = () => { ciRef.c = 0; chordsOn = true }
+// chord swells auto-arm after the first full drum loop (see tick) — one round of drums alone,
+// then the pads come in. ciRef.c is the chord index.
+let ciRef = { c: 0 }
 
 export const playMusic = () => {
   const mg = musicGain = zzfxX.createGain()
@@ -128,8 +126,8 @@ export const playMusic = () => {
   }
   const tick = () => {
     for (const [v, p] of PAT) if (p[s] === 'x') zzfxP(zzfxG(...DRUMS[v]), drumBus)
-    // swells only once armed (startChords), on a 2-loop downbeat, from chord 0
-    if (s === 0) { if (chordsOn && loop % LOOPS_PER_CHORD === 0) swell(); loop++ }
+    // first swell after two full drum loops (loop 2), then every LOOPS_PER_CHORD loops after.
+    if (s === 0) { if (loop > 0 && loop % LOOPS_PER_CHORD === 0) swell(); loop++ }
     const base = 15000 / BPM
     setTimeout(tick, base * (s % 2 ? 1 + SWING : 1 - SWING))
     s = (s + 1) % 16

@@ -2,9 +2,10 @@
 // (towers, miners, enemies, pulses). Pure logic — no drawing.
 import { CHAIN_DMG, CHAIN_RANGE, CHARGE, ENEMIES, ESPEED, LINK_MAX, LINK_RANGE, MINE_RANGE, PSPEED, R, TOWER_RANGE } from './constants'
 import { near, rnd } from './core'
-import { S, SPAWN, V } from './state'
+import { S, SPAWN } from './state'
 import { drawUI } from './ui'
 import type { Building, Pt, ResNode } from './types'
+import { titling } from './game'
 
 // is this building still under construction? (bp defined until the progress bar
 // finishes animating — bp===0 means paid but not yet visually complete)
@@ -41,7 +42,8 @@ function hop(from: Pt, to: Building, col = 0) {
 // finished solars. A link's color filter (filt) also rejects energy lacking that component.
 const accepts = (o: Building, col: number) => (o.t === 'L' || wants(o)) && (!o.filt || col & o.filt)
 // relay a unit onward FROM `node`, preserving its energy color.
-function relay(node: Building, col = 0) {
+export function relay(node: Building, col = 0) {
+  if (node.drain) return // title drain node: energy arrives and is consumed, never forwarded
   // forced route always wins, as long as the target is alive, in range, and can receive
   const rt = node.route
   if (rt && S.buildings.includes(rt) && accepts(rt, col) && near(node, rt, LINK_RANGE)) {
@@ -92,18 +94,16 @@ function tick() {
     const due = Math.floor((into / 60) * level + 0.5) // enemies that should have spawned by now
     while (S.spawnT < due) {
       S.spawnT++
-      let x = 0,
-        y = 0,
-        tries = 0
-      do {
-        x = rnd() * V.W
-        y = rnd() * V.Hh
-        tries++
-      } while (near({ x, y }, SPAWN, 260) && tries < 20)
-      S.enemies.push({ x, y, hp: 6, target: null })
+      spawnEnemy()
     }
   }
-  drawUI()
+  if (!titling) drawUI()
+}
+
+export function spawnEnemy() {
+  const a = rnd() * Math.PI * 2
+  const r = 500
+  S.enemies.push({ x: SPAWN.x + Math.cos(a) * r, y: SPAWN.y + Math.sin(a) * r, hp: 6 })
 }
 
 function pickTarget(): Building | null {

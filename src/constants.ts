@@ -44,7 +44,7 @@ export const INIT_ZOOM = 3
 export const MIN_ZOOM = .2
 export const MAX_ZOOM = 3
 // below this zoom, entities draw as flat dots (no 3D mesh / shadows) for performance
-export const LOD_ZOOM = .8
+export const LOD_ZOOM = .5
 // fog of war: world-space radius each building reveals through the darkness
 export const REVEAL = 180
 

@@ -17,10 +17,11 @@ const RESERVE = new RegExp('^(' + [
   'beginPath', 'closePath', 'moveTo', 'lineTo', 'stroke', 'fill', 'fillRect',
   'strokeRect', 'rect', 'clip', 'save', 'restore', 'translate', 'scale', 'rotate',
   'arc', 'fillText', 'textAlign', 'setLineDash', 'lineDashOffset', 'lineCap',
-  'lineJoin', 'createRadialGradient', 'addColorStop', 'createPattern', 'getImageData',
+  'lineJoin', 'createRadialGradient', 'createLinearGradient', 'addColorStop', 'createPattern', 'getImageData',
   'putImageData', 'getChannelData', 'data', 'drawImage', 'clearRect',
   // canvas / dom element + window + events
   'width', 'height', 'getElementById', 'getContext', 'createElement', 'innerHTML', 'onclick', 'dataset',
+  'appendChild', 'remove', 'cssText', 'body', 'opacity',
   'target', 'style', 'clientX', 'clientY', 'button', 'key', 'shiftKey', 'pointerId',
   'setPointerCapture', 'releasePointerCapture', 'preventDefault', 'deltaY',
   'onpointerdown', 'onpointermove', 'onpointerup', 'onpointerleave', 'oncontextmenu',
@@ -51,7 +52,7 @@ export async function bundle({ minify = true } = {}) {
     // in the minified release build — dev keeps readable names. Saves ~300 gzipped bytes.
     ...(minify ? { mangleProps: /.*/, reserveProps: RESERVE } : {}),
     // DEV is true only for the non-minified dev build; DEV-guarded code (e.g. exposing
-    // regen() to the Leva panel) is dead-code-eliminated from the minified release.
+    // regen() on window for the console) is dead-code-eliminated from the minified release.
     // MINIMAP: true = corner minimap, false = edge threat arrows. Injected as a literal so
     // the unused one (and its whole module) is dead-code-eliminated. FLIP IT HERE.
     // DEVTOOLS: in-editor debug shortcuts (e.g. press 'e' to spawn an enemy at the cursor).

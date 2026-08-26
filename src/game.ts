@@ -8,15 +8,15 @@ import {
   R,
   TOWER_RANGE,
 } from './constants'
-import { canPlace, near, nearest, rnd, unproject } from './core'
+import { canPlace, near, nearest, rnd, setSeed, unproject } from './core'
 import { computeSun } from './lighting'
 import { render } from './render'
 import { inMinimap, mmToWorld } from './minimap'
 import { miscSounds } from './sounds'
 import { C, LT, resize, S, SPAWN, V } from './state'
-import { stepSim } from './sim'
+import { relay, spawnEnemy, stepSim } from './sim'
 import { drawUI } from './ui'
-import { playMusic, renderMusic, startChords, toggleMute, zzfx, zzfxX } from './zzfx'
+import { playMusic, renderMusic, toggleMute, zzfx, zzfxX } from './zzfx'
 import type { BType, Building, EType } from './types'
 
 addEventListener('resize', resize)
@@ -24,6 +24,56 @@ addEventListener('resize', resize)
 // render the music buffers right away (pure math, no gesture needed). Playback needs a
 // resumed AudioContext, so it starts on the first user gesture — buffers are ready by then.
 renderMusic()
+
+// PRISMATICA as stroke paths — one entry per letter, "|"-separated. Each letter is one or more
+// comma-separated strokes; each stroke is a run of grid cells (base-15 chars 0-9a-e, cell = x+y*3
+// on the 3×5 grid). A link is placed at every cell used; consecutive cells in a stroke are wired
+// (route) so energy traces the drawn stroke. This one blob replaces the old FONT+WIRES pair.
+const GLYPHS = 'c601576|c601576ae|012,17d,cde|2137bdc|c60428e|c63158e,678|012,17d|012,17d,cde|2139de|c63158e,678'.split('|')
+export let titling = true // true while the title is showing (drives pre-start pulse flow)
+export let trans = 0
+// page-load intro: seconds since load. Held black for the first INTRO_HOLD, then the black
+// fades out over the next second (see render). Purely a load-in flourish.
+export let intro = 0
+export const INTRO_HOLD = 0.5
+function titleScreen() {
+  LT.dayT = .1
+  const cols = GLYPHS.length * 3 - 1
+  S.ZOOM = (V.W * .9 / (cols * 2 * 18))
+  // place a link at every cell of every stroke (base-15 chars 0-9a-e = grid cell x+y*3), wiring
+  // consecutive cells so energy traces the stroke. Cells shared between strokes get a stacked
+  // duplicate link — invisible (same spot) and harmless on the title, cheaper than deduping.
+  GLYPHS.forEach((glyph, li) => {
+    const strokes = glyph.split(',')
+    strokes.forEach((stroke, si) => {
+      let prev: Building | null = null
+      for (const ch of stroke) {
+        const b = parseInt(ch, 15), X = (li * 3 + (b % 3) - cols / 2) * 18, Y = (((b / 3) | 0) - 2) * 17
+        const dot = mkB('L', SPAWN.x + X + Y, SPAWN.y + Y - X)
+        S.buildings.push(dot)
+        if (prev) prev.route = dot
+        else if (stroke.length > 1 || si === 0) dot.emit = 1
+        prev = dot
+      }
+      if (prev && stroke.length > 1) prev.drain = 1
+    })
+  })
+  setSeed(15)
+  for (let i = 0; i < 50; i++) {
+    const rad = LT.patchSpacing * i ** 0.5, a = i * GOLDEN
+    spawnPatch(SPAWN.x + Math.cos(a) * rad, SPAWN.y + Math.sin(a) * rad)
+  }
+  // ring hugging the word: 15 miners/lasers spread by EQUAL ARC LENGTH around a tight
+  // world-space ellipse (long in X, short in Y). Walk the ellipse in tiny angle steps,
+  // dropping a building each time the accumulated arc passes a 1/15-of-perimeter slot.
+  let px = 281, py = 0, arc = 0, k = 0
+  for (let a = 0; a < 7; a += .01) {
+    const X = -9 + Math.cos(a) * 290, Y = Math.sin(a) * 86
+    arc += Math.hypot(X - px, Y - py); px = X; py = Y
+    if (arc >= 84.7 * k && k < 15) { S.buildings.push({ ...mkB('MT'[k++ % 2] as BType, SPAWN.x + X + Y, SPAWN.y + Y - X), e: 99, mp: rnd() * 1.5 }) }
+  }
+  setSeed(0)
+}
 
 // build a Building record with the shared defaults (energy 0, hp 20, no cooldown)
 const mkB = (t: BType, x: number, y: number, bp?: number): Building => ({ t, x, y, e: 0, hp: 20, cd: 0, bp })
@@ -55,13 +105,14 @@ function spawnPatch(cx: number, cy: number) {
 function reset() {
   S.enemies = []; S.pulses = []; S.parts = []; S.resource = 70; S.t = 0; S.spawnT = 0; S.revealed = []
   SPAWN.x = V.W / 2; SPAWN.y = V.Hh / 2; S.camX = SPAWN.x; S.camY = SPAWN.y
+  LT.dayT = .35; 
   S.buildings = [mkB('S', SPAWN.x - 35, SPAWN.y), mkB('S', SPAWN.x + 35, SPAWN.y),
     ...[0, 1, 2].map((i) => { const a = -Math.PI / 2 + (i * Math.PI * 2) / 3; return mkB('L', SPAWN.x + Math.cos(a) * 22, SPAWN.y + Math.sin(a) * 22) })]
   S.nodes = []
   // spawn RGB color crystals equidistant from spawn; they act as world-fixed color links
   for (let i = 0; i < 3; i++) {
     const a = -Math.PI / 2 + (i * Math.PI * 2) / 3
-    const [crystalCol, ek] = ([[4, 'crystalR'], [2, 'crystalG'], [1, 'crystalB']] as [number, EType][])[i]
+    const crystalCol = [4, 2, 1][i], ek = (['crystalR', 'crystalG', 'crystalB'] as EType[])[i]
     S.buildings.push({ ...mkB('L', SPAWN.x + Math.cos(a) * 195, SPAWN.y + Math.sin(a) * 195), crystalCol, ek, hp: 9999 })
   }
   // lay the sunflower: patch 0 at spawn, each next one rotated by GOLDEN and pushed out
@@ -82,6 +133,7 @@ const my = (e: { clientY: number }) => e.clientY
 // it stays fixed on screen (clamped to MIN_ZOOM..MAX_ZOOM).
 C.onwheel = (e: WheelEvent) => {
   e.preventDefault()
+  if (titling) return
   const before = unproject(mx(e), my(e))
   S.ZOOM = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, S.ZOOM * (e.deltaY < 0 ? 1.02 : 1 / 1.02)))
   const after = unproject(mx(e), my(e))
@@ -106,13 +158,15 @@ const tryBuild = (x: number, y: number) => {
   drawUI()
   return true
 }
-let audioOn = 0 // true after the first user gesture (needed to start music)
+let audioOn = 0 // set after the first user gesture (needed to start music)
 C.onpointerdown = (e: PointerEvent) => {
   if (e.button) return
 
   // first click: just start the music (drums). Return so nothing else happens yet.
-  if (audioOn===0) { audioOn++; zzfxX.resume(); playMusic(); startChords(); return }
+  if (!audioOn) { audioOn = 1; zzfxX.resume(); playMusic(); return }
   // while on the title, clicks never select/build/pan. The first (audioOn) started the music;
+  // this one kicks off the start transition (once). Any click during titling returns here.
+  if (titling) { if (!trans) trans = 0.0001; return }
   downX = mx(e)
   downY = my(e)
   panX = S.camX
@@ -194,7 +248,7 @@ C.onpointermove = (e: PointerEvent) => {
   }
 }
 C.onpointerup = (e: PointerEvent) => {
-  if (e.button) return
+  if (e.button || titling) return // no select/build on release while the title is up
   dragging = false
   mmDrag = false
   S.chainFrom = null // end any preview line
@@ -246,7 +300,7 @@ addEventListener('keydown', (e: KeyboardEvent) => {
   // 1-4 pick a build tool (S/L/M/T) and enter build mode
   const ti = '1234'.indexOf(e.key)
   if (ti >= 0) {
-    S.tool = (['S', 'L', 'M', 'T'] as BType[])[ti]
+    S.tool = 'SLMT'[ti] as BType
     S.mode = 'build'
     S.sel = null // deselect any building when starting a build
     drawUI()
@@ -268,21 +322,36 @@ addEventListener('keydown', (e: KeyboardEvent) => {
 
 // --- main loop ---
 let last = performance.now()
+let relayT = 0, enemyT = 0 // title interval timers: energy spray + enemy spawn
 function loop(now: number) {
   const dt = Math.min(0.05, (now - last) / 1000)
   last = now
+  intro += dt // page-load fade-in timer (render draws black for INTRO_HOLD then fades it out)
   stepSim(dt)
-  // advance time of day, then recompute the sun for this frame
-  if (LT.autoDay) LT.dayT = (LT.dayT + dt / LT.dayLen) % 1
+  LT.dayT = (LT.dayT + dt / LT.dayLen) % 1
+
+  // interval-based (not random): spray energy through the letters every 0.25s, spawn a
+  // drifting enemy for the towers every 0.8s.
+  if (titling) {
+    if ((relayT -= dt) <= 0) { relayT = .1; S.buildings.forEach((b) => b.emit && relay(b, 0)) }
+    if ((enemyT -= dt) <= 0) { enemyT = .8; spawnEnemy() }
+  }
+  // start transition: advance trans (1s per phase). Cross 1 → swap title out for the game
+  // under the full-black cover; render draws the fade from `trans` (see render).
+  if (trans > 0 && trans < 2) {
+    const was = trans < 1
+    trans = Math.min(2, trans + dt / 1.3) // ~1.3s cover (0→1) + ~1.3s reveal (1→2)
+    // cross into black: swap the title for the freshly-reset game (dayT back to morning)
+    if (was && trans >= 1) { titling = false; reset(); }
+  }
   computeSun(LT.dayT)
   render()
   requestAnimationFrame(loop)
 }
 
-reset()
-drawUI()
+titleScreen()
 requestAnimationFrame(loop)
-// dev: let the Leva panel re-run world generation after tweaking resource params
+// dev: expose reset() on window as regen() to re-run world generation from the console
 // (DEV is defined false in the release build, so this is stripped by minification)
 declare const DEV: boolean
 declare const MINIMAP: boolean // injected by bundle.js; false => threat arrows, minimap DCE'd
@@ -298,7 +367,7 @@ if (DEVTOOLS) {
     // 'e': spawn an enemy at the cursor
     if (e.key === 'e' && S.mouse) {
       const w = unproject(S.mouse.x, S.mouse.y)
-      S.enemies.push({ x: w.x, y: w.y, hp: 6, target: null })
+      S.enemies.push({ x: w.x, y: w.y, hp: 6 })
     }
   })
 }

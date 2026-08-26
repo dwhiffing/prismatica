@@ -1,7 +1,7 @@
 // Day/night lighting: sun arc, color temperature, and per-face flat shading.
 import { C_GOLDEN, C_NIGHT, C_NOON } from './constants'
 import { norm } from './geometry'
-import { LT, SUN } from './state'
+import { SUN } from './state'
 import type { V3 } from './types'
 
 // linear blend of two rgb (0..1) vectors
@@ -18,8 +18,8 @@ export function computeSun(dayT: number) {
   // Light travels downward but kept OBLIQUE (never straight down) so vertical/side
   // faces catch it at differing angles and read as distinct facets instead of a
   // flat fill. Strong, roughly-constant horizontal lean; vertical drop is clamped.
-  const vy = -(LT.drop + LT.dropUp * Math.max(0, up)) // vertical drop, never 0
-  SUN.dir = norm([-Math.cos(a) * LT.lean, vy, LT.depth])
+  const vy = -0.1 // vertical drop, never 0 (was LT.drop + LT.dropUp·max(0,up), dropUp=0)
+  SUN.dir = norm([-Math.cos(a) * 2.25, vy, 2.3]) // lean 2.25, depth 2.3
   // day factor eases through a twilight band around the horizon so dusk blends
   // into night instead of snapping. 0 = full night, 1 = well above horizon.
   const TW = 0.54 // half-width of the dawn/dusk twilight band (sun-height units); wide = long sunrise/sunset
@@ -29,7 +29,7 @@ export function computeSun(dayT: number) {
   const daytimeCol = mix(C_GOLDEN, C_NOON, Math.max(0, Math.min(1, (warm - 0.3) / 0.7)))
   SUN.col = mix(C_NIGHT, daytimeCol, dayF)
   // ambient eases through twilight too: moonlit floor + extra by day
-  SUN.amb = LT.amb + LT.ambDay * dayF
+  SUN.amb = 0.4 + 0.32 * dayF // amb 0.4 + ambDay 0.32·dayF
 }
 
 // shade a face: diffuse from SUN.dir tinted by SUN.col + ambient, combined with
@@ -37,7 +37,7 @@ export function computeSun(dayT: number) {
 export function shade(base: string, n: V3, amb: number, dif: number): string {
   const L = SUN.dir // direction light travels; face is lit if it points toward -L
   const d = Math.max(0, -(n[0] * L[0] + n[1] * L[1] + n[2] * L[2]))
-  const lit = amb * SUN.amb * LT.diff + dif * d * (0.35 + 0.65 * SUN.up)
+  const lit = amb * SUN.amb * 1.6 + dif * d * (0.35 + 0.65 * SUN.up) // diff 1.6
   return tint(base, lit, SUN.col)
 }
 
