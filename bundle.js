@@ -65,7 +65,8 @@ export async function bundle({ minify = true } = {}) {
     // DEVTOOLS: in-editor debug shortcuts (e.g. press 'e' to spawn an enemy at the cursor).
     // Injected as a literal so the whole dev-tools block is dead-code-eliminated when off.
     // Defaults on for the dev build, off for release; flip the release value here to test.
-    define: { DEV: String(!minify), MINIMAP: 'false', FOG: 'true', DEVTOOLS: String(!minify) },
+    // SKIPTITLE: dev boots straight into the game (skips the title/menu); always false in release.
+    define: { DEV: String(!minify), MINIMAP: 'false', FOG: 'true', DEVTOOLS: String(!minify), SKIPTITLE: String(!minify) },
     write: false,
   });
   let js = res.outputFiles[0].text.trim();

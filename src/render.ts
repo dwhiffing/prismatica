@@ -1,7 +1,6 @@
 // Rendering: 3D face projection, shadows, ground, and the top-level render().
 import {
   BUILD,
-  CHAIN_RANGE,
   COST,
   LINK_MAX,
   LINK_RANGE,
@@ -25,7 +24,6 @@ declare const MINIMAP: boolean
 declare const FOG: boolean
 import { ENTITIES, type Entity } from './models'
 import { LT, S, SUN, V, X } from './state'
-import { chainHead, towerChainLen } from './sim'
 import { intro, INTRO_HOLD, titling, trans } from './game'
 import type { Face, V3 } from './types'
 
@@ -144,12 +142,11 @@ function chunkRing(gx: number, gy: number, r: number, n: number, done: number) {
 }
 
 // draw a building's range rings: a shared yellow link ring for every energy
-// building, plus a green mine ring (miners) or red shoot ring (towers). `tRange`
-// overrides the tower ring radius (used to show a chain head's enhanced range).
-function drawRanges(t: BType, gx: number, gy: number, alpha = 0.5, tRange = TOWER_RANGE) {
+// building, plus a green mine ring (miners) or red shoot ring (towers).
+function drawRanges(t: BType, gx: number, gy: number, alpha = 0.5) {
   groundRing(gx, gy, LINK_RANGE, '#fd4', alpha, 2) // yellow: energy link range (all)
   if (t === 'M') groundRing(gx, gy, MINE_RANGE, '#4f6', alpha, 2) // green: mine range
-  if (t === 'T') groundRing(gx, gy, tRange, '#f66', alpha, 2) // red: shoot range
+  if (t === 'T') groundRing(gx, gy, TOWER_RANGE, '#f66', alpha, 2) // red: shoot range
 }
 
 // project an entity's vertices onto the ground along the light, then hull them
@@ -259,12 +256,8 @@ export function render() {
 
   if (S.sel && !buildings.includes(S.sel)) S.sel = null // selection was destroyed
 
-  // range rings: only for the selected building (placement preview shows its own). A
-  // selected tower shows its chain-enhanced firing range.
-  if (S.sel) {
-    const tR = S.sel.t === 'T' ? TOWER_RANGE * (1 + CHAIN_RANGE * (towerChainLen(S.sel) - 1)) : TOWER_RANGE
-    drawRanges(S.sel.t, S.sel.x, S.sel.y, 0.5, tR)
-  }
+  // range rings: only for the selected building (placement preview shows its own).
+  if (S.sel) drawRanges(S.sel.t, S.sel.x, S.sel.y, 0.5)
   // construction progress ring (green chunks). Silhouette outlines (selected crystal +
   // buildings) are drawn later, on top of their models.
   for (const b of buildings)
@@ -401,37 +394,6 @@ export function render() {
     X.fillStyle = grd
     X.fillRect(ax - r, ay - r, r * 2, r * 2)
   }
-
-  // laser-chain lines: a red beam tower->tower along each chain link. When the chain's
-  // HEAD is actively shooting the beam is thick (scales with chain size); idle chains are
-  // a thin dim connector. A firing glow sits on every tower — full on the head, half on
-  // the rest.
-  const chainGlow = (x: number, y: number, k: number) => {
-    const [ax, ay] = g(x, y, 18)
-    glow(ax, ay, '255,120,110', k)
-  }
-  X.strokeStyle = '#f66'
-  X.lineCap = 'round'
-  for (const b of buildings)
-    if (b.t === 'T' && b.chain && buildings.includes(b.chain) && b.bp == null) {
-      const head = chainHead(b)
-      const firing = !!(head.fxt && head.fxt > 0 && head.fx) // whole chain lights up together
-      const [ax, ay] = g(b.x, b.y, 18),
-        [bx, by] = g(b.chain.x, b.chain.y, 18)
-      if (firing) {
-        X.globalAlpha = 1
-        X.lineWidth = 1.5 + towerChainLen(b) // thicker for bigger chains
-        chainGlow(b.x, b.y, b === head ? 1 : 0.5) // head full, others half
-        if (!b.chain.chain) chainGlow(b.chain.x, b.chain.y, 0.5) // glow the tail tower too
-      } else {
-        X.globalAlpha = 0.4
-        X.lineWidth = 1.5 // thin idle connector
-      }
-      beam(ax, ay, bx, by)
-    }
-  X.globalAlpha = 1
-  X.lineCap = 'butt'
-  X.lineWidth = 1
 
   // energy pulses: colored glowing orbs — color encodes the energy's RGB bitmask.
   // Index 0 = uncolored (warm dim white), 1-7 = B/G/GB/R/RB/RG/RGB via bitmask.

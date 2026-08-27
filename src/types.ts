@@ -23,7 +23,6 @@ export interface Building extends Pt {
   sh?: number // miner: shots left on the current energy charge
   ni?: number // round-robin index for cycling through neighbors when relaying energy
   route?: Building | null // forced relay target (set via 'z'); overrides round-robin
-  chain?: Building | null // tower: next tower in the laser chain (set via 'z')
   rv?: boolean // fog: this finished building has been recorded into S.revealed
   load?: number // link: energy units passed through this second (reset each tick); over
   // LINK_MAX it overloads — excess is burned and the link draws red until the next reset

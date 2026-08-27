@@ -1,6 +1,6 @@
 // Simulation: energy routing, per-second tick, and the per-frame world update
 // (towers, miners, enemies, pulses). Pure logic — no drawing.
-import { CHAIN_DMG, CHAIN_RANGE, CHARGE, ENEMIES, ESPEED, LINK_MAX, LINK_RANGE, MINE_RANGE, PSPEED, R, TOWER_RANGE } from './constants'
+import { CHARGE, ENEMIES, ESPEED, LINK_MAX, LINK_RANGE, MINE_RANGE, PSPEED, R, TOWER_RANGE } from './constants'
 import { near, rnd } from './core'
 import { S, SPAWN } from './state'
 import { drawUI } from './ui'
@@ -58,24 +58,6 @@ export function relay(node: Building, col = 0) {
   hop(node, ns[node.ni], col)
 }
 
-const validChain = (a: Building) =>
-  a.chain && S.buildings.includes(a.chain) && !building(a.chain) && near(a, a.chain, TOWER_RANGE)
-    ? a.chain
-    : null
-export const chainHead = (t: Building): Building => {
-  let head = t, g = 0
-  for (;;) {
-    const prev = S.buildings.find((o) => o.t === 'T' && o.chain === head && S.buildings.includes(o))
-    if (!prev || ++g > 99) break
-    head = prev
-  }
-  return head
-}
-export const towerChainLen = (t: Building): number => {
-  let n = 1, cur: Building | null = chainHead(t), g = 0
-  while (cur && cur.chain && S.buildings.includes(cur.chain) && ++g < 99) { n++; cur = cur.chain }
-  return n
-}
 
 // per-second tick: emit energy, advance the threat level, spawn enemies far from spawn.
 // Threat level = minutes elapsed (0 at start). During level L, exactly L enemies spawn,
@@ -138,13 +120,10 @@ export function stepSim(dt: number) {
     if (building(b)) continue // under construction — doesn't operate yet
     if (b.t === 'T') {
       b.cd -= dt
-      // only the chain head fires; solo towers (chain of 1) fire normally
-      if (b.cd <= 0 && b.e > 0 && !S.buildings.some((o) => o.t === 'T' && !building(o) && validChain(o) === b)) {
-        const len = towerChainLen(b)
-        const range = TOWER_RANGE * (1 + CHAIN_RANGE * (len - 1))
-        const en = S.enemies.find((e) => near(b, e, range))
+      if (b.cd <= 0 && b.e > 0) {
+        const en = S.enemies.find((e) => near(b, e, TOWER_RANGE))
         if (en) {
-          en.hp -= 3 + CHAIN_DMG * (len - 1)
+          en.hp -= 3
           b.e -= 1
           b.cd = 0.4
           b.fx = en

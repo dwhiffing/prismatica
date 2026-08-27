@@ -6,10 +6,6 @@ import type { BType, EType, V3 } from './types'
 export const LINK_RANGE = 50 // energy transfer range — same for every energy building
 export const MINE_RANGE = 30 // miner -> resource node (green ring)
 export const TOWER_RANGE = 112 // tower -> enemy base range (red ring). was 150, -25%
-// laser-chain bonuses: each extra tower in a chain adds this fraction of the base range
-// and this much flat damage to the chain HEAD (the tower that actually fires).
-export const CHAIN_RANGE = 0.35 // +35% base range per extra chained tower
-export const CHAIN_DMG = 2 // +2 damage per extra chained tower
 
 // --- entity sizes / economy ---
 export const R: Record<EType, number> = {

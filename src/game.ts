@@ -162,10 +162,13 @@ let audioOn = 0 // set after the first user gesture (needed to start music)
 C.onpointerdown = (e: PointerEvent) => {
   if (e.button) return
 
-  // first click: just start the music (drums). Return so nothing else happens yet.
-  if (!audioOn) { audioOn = 1; zzfxX.resume(); playMusic(); return }
-  // while on the title, clicks never select/build/pan. The first (audioOn) started the music;
-  // this one kicks off the start transition (once). Any click during titling returns here.
+  // first user gesture: unlock + start the music. On the title this is a click all its own
+  // (return so nothing else happens — the NEXT title click starts the transition). In-game
+  // (SKIPTITLE), fall through so this same click still builds/selects/pans as normal —
+  // otherwise the first press per load would be silently swallowed.
+  if (!audioOn) { audioOn = 1; zzfxX.resume(); playMusic(); if (titling) return }
+  // while on the title, clicks never select/build/pan — they only kick off the start
+  // transition (once).
   if (titling) { if (!trans) trans = 0.0001; return }
   downX = mx(e)
   downY = my(e)
@@ -174,10 +177,10 @@ C.onpointerdown = (e: PointerEvent) => {
   dragging = true
   didDrag = false
   mmDrag = MINIMAP && inMinimap(downX, downY)
-  // if the press lands on an existing link/tower, a drag extends a chain of that type
+  // if the press lands on an existing link, a drag re-routes it toward another link
   // (instead of panning) — see onpointerup.
   const dp = unproject(downX, downY)
-  chainSrc = S.mode === 'select' ? nearest(dp, (b) => b.t === 'L' || b.t === 'T', 12 * 12) : null
+  chainSrc = S.mode === 'select' ? nearest(dp, (b) => b.t === 'L', 12 * 12) : null
   // build-mode L/T: drop the first building of the line here; onpointermove adds more,
   // one per max-range step, as the cursor moves away.
   lastBuilt = null
@@ -220,21 +223,18 @@ C.onpointermove = (e: PointerEvent) => {
     return
   }
   // once an on-a-link drag is moving, expose its source so render draws a preview line.
-  // If the cursor reaches another same-type building, connect to it right now and continue
-  // the chain FROM there — no need to release between links.
+  // If the cursor reaches another link, route to it right now and continue FROM there —
+  // no need to release between links.
   if (didDrag && chainSrc) {
     // first frame of the drag: clear the source's existing connection (we're re-routing it)
-    if (!S.chainFrom) { if (chainSrc.t === 'T') chainSrc.chain = null; else chainSrc.route = null }
+    if (!S.chainFrom) chainSrc.route = null
     S.chainFrom = chainSrc
     const w = unproject(mx(e), my(e))
-    const tgt = nearest(w, (b) => b !== chainSrc && b.t === chainSrc!.t, 8 * 8)
+    const tgt = nearest(w, (b) => b !== chainSrc && b.t === 'L', 8 * 8)
     if (tgt) {
-      if (chainSrc.t === 'T') chainSrc.chain = tgt
-      else {
-        if (tgt.route === chainSrc) tgt.route = null // can't have opposing links (A->B and B->A)
-        chainSrc.route = tgt
-      }
-      chainSrc = S.chainFrom = tgt // advance the chain to the target
+      if (tgt.route === chainSrc) tgt.route = null // can't have opposing links (A->B and B->A)
+      chainSrc.route = tgt
+      chainSrc = S.chainFrom = tgt // advance the routing chain to the target
       S.sel = tgt
     }
   }
@@ -349,7 +349,11 @@ function loop(now: number) {
   requestAnimationFrame(loop)
 }
 
-titleScreen()
+// SKIPTITLE (injected by bundle.js): true in dev to boot straight into the game, skipping the
+// title/menu. Injected as a literal so the dead branch folds away entirely in release.
+declare const SKIPTITLE: boolean
+if (SKIPTITLE) { titling = false; LT.dayT = .35; reset(); drawUI() }
+else titleScreen()
 requestAnimationFrame(loop)
 // dev: expose reset() on window as regen() to re-run world generation from the console
 // (DEV is defined false in the release build, so this is stripped by minification)

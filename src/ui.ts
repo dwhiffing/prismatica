@@ -4,15 +4,14 @@ import { H, S } from './state'
 import type { BType } from './types'
 
 const TOOLS: [BType, string][] = [
-  ['S', 'Solar'],
   ['L', 'Link'],
   ['M', 'Miner'],
   ['T', 'Tower'],
+  ['S', 'Solar'],
 ]
 
 export function drawUI() {
   H.innerHTML =
-    `<b class="${S.mode === 'select' ? 'a' : ''}" data-t="X">Select</b>` +
     TOOLS.map(
       ([k, n]) =>
         `<b class="${S.mode === 'build' && S.tool === k ? 'a' : ''}" data-t="${k}">${n} $${COST[k]}</b>`,
@@ -24,8 +23,7 @@ export function drawUI() {
 H.onclick = (e: MouseEvent) => {
   const k = (e.target as HTMLElement).dataset.t
   if (!k || k === '_') return
-  if (k === 'X') S.mode = 'select'
-  else if (S.mode === 'build' && S.tool === k) S.mode = 'select' // toggle off
+  if (S.mode === 'build' && S.tool === k) S.mode = 'select' // toggle off
   else {
     S.tool = k as BType
     S.mode = 'build'
