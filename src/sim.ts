@@ -49,13 +49,15 @@ export function spawnParts(x: number, y: number, n: number, spd: number, col: st
   }
 }
 
-// remove dead enemies (hp<=0), bursting a death explosion at each: one big fading core
-// particle plus a spray of smaller ones flying outward. Returns the survivors.
+// a death explosion at (x,y): one big fading core particle plus a spray of debris flying out.
+// Shared by dying enemies and destroyed buildings.
+function explode(x: number, y: number) {
+  S.parts.push([x, y, 0, 0, 1, '255,90,60', 6]) // big explosion core
+  spawnParts(x, y, 12, 110, '255,120,60')       // debris flying out
+}
+// remove dead enemies (hp<=0), exploding each. Returns the survivors.
 function killDead() {
-  for (const e of S.enemies) if (e.hp <= 0) {
-    S.parts.push([e.x, e.y, 0, 0, 1, '255,90,60', 6]) // big explosion core
-    spawnParts(e.x, e.y, 12, 110, '255,120,60')       // debris flying out
-  }
+  for (const e of S.enemies) if (e.hp <= 0) explode(e.x, e.y)
   S.enemies = S.enemies.filter((e) => e.hp > 0)
 }
 
@@ -79,7 +81,13 @@ const accepts = (o: Building, col: number) =>
 // relay a unit onward FROM `node`, preserving its energy color.
 export function relay(node: Building, col = 0) {
   if (node.drain) return // title drain node: energy arrives and is consumed, never forwarded
-  // forced route always wins, as long as the target is alive, in range, and can receive
+  // PRIORITY: an in-range consumer that actually NEEDS this unit (under construction, or a
+  // miner/tower below charge — anything non-link that accepts + keeps it) wins over the forced
+  // route. A `route` steers surplus energy, but a building waiting to be built or powered should
+  // never be starved just because this link is aimed elsewhere.
+  const needy = S.buildings.filter((o) => o !== node && o.t !== 'L' && accepts(o, col) && near(node, o, LINK_RANGE))
+  if (needy.length) { node.ni = ((node.ni || 0) + 1) % needy.length; hop(node, needy[node.ni], col); return }
+  // forced route next, as long as the target is alive, in range, and can receive
   const rt = node.route
   if (rt && S.buildings.includes(rt) && accepts(rt, col) && near(node, rt, LINK_RANGE)) {
     hop(node, rt, col)
@@ -379,9 +387,12 @@ export function stepSim(dt: number) {
   // hits 0 the building is complete — clear bp so it becomes solid and operational.
   for (const b of S.buildings) if (b.bp === 0) b.bp = undefined
 
-  // ease each crystal's displayed scale toward its amt-based size (shrinks to 0)
+  // ease each crystal's displayed scale toward its amt-based size. While it still has resources
+  // it only shrinks down to 25% (full=1 -> nearly-empty=0.25); once fully depleted it eases to 0
+  // and vanishes past the render's cutoff — so a mined-out crystal pops out at 25%, not fades to
+  // a speck.
   for (const n of S.nodes) {
-    const target = n.amt / n.cap // shrink toward 0 as it depletes
+    const target = n.amt > 0 ? 0.25 + 0.75 * n.amt / n.cap : 0
     n.ds = (n.ds || 0) + (target - (n.ds || 0)) * Math.min(1, dt * 4)
   }
 
@@ -535,6 +546,8 @@ export function stepSim(dt: number) {
     }
     if (d < R[tg.t] + R.E) tg.dead = 1 // one hit destroys a building
   }
+  // destroyed buildings explode like enemies
+  for (const b of S.buildings) if (b.dead) explode(b.x, b.y)
   S.buildings = S.buildings.filter((b) => !b.dead)
 
   // tower projectiles (bullets & rockets). Bullets fly to a fixed aim point; rockets steer:

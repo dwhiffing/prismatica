@@ -4,6 +4,7 @@ import {
   LINK_RANGE,
   MAX_ZOOM,
   MIN_ZOOM,
+  MINE_RANGE,
   NODE_AMT,
   R,
   TOWER_RANGE,
@@ -263,7 +264,10 @@ C.onpointermove = (e: PointerEvent) => {
     if (!S.chainFrom) chainSrc.route = null
     S.chainFrom = chainSrc
     const w = unproject(mx(e), my(e))
-    const tgt = nearest(w, (b) => b !== chainSrc && b.t === 'L', 8 * 8)
+    // only links within LINK_RANGE of the source can be chained — energy won't flow across a
+    // longer gap, so a further link would just be a dead connection.
+    const tgt = nearest(w, (b) => b !== chainSrc && b.t === 'L'
+      && (b.x - chainSrc!.x) ** 2 + (b.y - chainSrc!.y) ** 2 <= LINK_RANGE ** 2, 8 * 8)
     if (tgt) {
       if (tgt.route === chainSrc) tgt.route = null // can't have opposing links (A->B and B->A)
       chainSrc.route = tgt
@@ -342,10 +346,15 @@ addEventListener('keydown', (e: KeyboardEvent) => {
     toggleMute()
     return
   }
-  // 'd': sell the selected building, refunding half its build cost
+  // 'd': sell the selected building, refunding half its build cost. Selling a DEPLETED miner
+  // (no live crystal in mining range) sells EVERY depleted miner at once — a one-key cleanup of
+  // spent mining sites. Any other building sells just itself.
   if (e.key === 'd' && S.sel) {
-    S.resource += COST[S.sel.t] / 2
-    S.buildings = S.buildings.filter((b) => b !== S.sel)
+    const starved = (b: Building) => b.t === 'M' &&
+      !S.nodes.some((n) => n.amt > 0 && (n.x - b.x) ** 2 + (n.y - b.y) ** 2 < MINE_RANGE ** 2)
+    const doomed = starved(S.sel) ? S.buildings.filter(starved) : [S.sel]
+    for (const b of doomed) S.resource += COST[b.t] / 2
+    S.buildings = S.buildings.filter((b) => !doomed.includes(b))
     S.sel = null
     drawUI()
   }

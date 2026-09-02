@@ -298,11 +298,6 @@ export function render() {
   for (const b of buildings)
     if (b.bp != null)
       chunkRing(b.x, b.y, R[b.t] + 5, BUILD[b.t], BUILD[b.t] - b.bp)
-    // a built, non-upgrading tower that isn't full shows its stored power as a segmented ring
-    // (e/CHARGE): bright yellow filled, dark yellow empty. floor() so partial charge never
-    // rounds up to look full. Hidden only once fully charged.
-    else if (b.t === 'T' && b.e < CHARGE)
-      chunkRing(b.x, b.y, R[b.t] + 5, CHARGE, Math.floor(b.e), '#fe4', '#540')
 
   // Two levers keep the frame cheap with hundreds of entities:
   //  - viewport cull (onScreen): off-screen entities are skipped everywhere.
@@ -484,7 +479,7 @@ export function render() {
       if (b.mn) {
         const mp = b.mp || 0
         const a = Math.max(0, Math.min(1, Math.min(mp, 1 - mp) / 0.3)) // shared fade
-        const [bx, by] = g(b.mn.x, b.mn.y, 6)
+        const [bx, by] = g(b.mn.x, b.mn.y, 3) // impact ~20% lower on the rock (was 6)
         glow(ax, ay, UNCOL, a) // origin glow
         glow(bx, by, UNCOL, a, 0.8) // impact glow at the crystal (half size)
         X.globalAlpha = a // beam
@@ -512,6 +507,15 @@ export function render() {
     X.fillStyle = '#f44'; X.fillRect(bx, cy, w * Math.max(0, e.hp) / (e.hp0 || 1), 3) // hp
     if (e.sh! > 0) { X.fillStyle = '#4ff'; X.fillRect(bx, cy, w * e.sh! / e.sh0!, 3) } // shield on top
   }
+  // tower energy: a single subtle yellow bar (same style as the enemy health bar), shown only
+  // while below full charge. One layer over a dark track — no ground ring.
+  for (const b of buildings)
+    if (b.t === 'T' && b.bp == null && b.e < CHARGE && onScreen(b)) {
+      const [cx, cy] = g(b.x, b.y, 26), bx = cx - 7
+      X.globalAlpha = 1
+      X.fillStyle = '#430'; X.fillRect(bx, cy, 14, 3)                    // dark track
+      X.fillStyle = '#fe4'; X.fillRect(bx, cy, 14 * b.e / CHARGE, 3)     // yellow energy
+    }
   // spec pips: 3 slots above any tower holding at least one absorbed color. Each FILLED slot
   // (weapon / element / bonus, in the tower's current perm order) is tinted by that color, so
   // red energy reads red; empty slots are gray. Tapping F reorders which color sits in which.
