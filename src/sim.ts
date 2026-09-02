@@ -5,7 +5,7 @@ import { near, rnd } from './core'
 import { S, SPAWN } from './state'
 import { drawUI } from './ui'
 import type { Building, Enemy, Pt, ResNode, Shot } from './types'
-import { titling } from './game'
+import { titling, toMenu } from './game'
 
 // energy color bitmask (4=R,2=G,1=B) -> upgrade index 0..6: green,red,blue,yellow,cyan,magenta,white
 const COLIDX: Record<number, number> = { 2: 0, 4: 1, 1: 2, 6: 3, 3: 4, 5: 5, 7: 6 }
@@ -114,7 +114,7 @@ function tick() {
       spawnEnemy()
     }
   }
-  if (!titling) drawUI()
+  if (!titling && !toMenu) drawUI() // suppress the HUD during a game-over fade too
 }
 
 // per-kind base stats: [hp, shield, speed]. kind 0 normal .. 5 boss. A shield enemy carries

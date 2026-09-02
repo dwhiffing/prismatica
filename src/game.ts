@@ -13,7 +13,7 @@ import { computeSun } from './lighting'
 import { render } from './render'
 import { inMinimap, mmToWorld } from './minimap'
 import { miscSounds } from './sounds'
-import { C, LT, resize, S, SPAWN, V } from './state'
+import { C, H, LT, resize, S, SPAWN, V } from './state'
 import { cycleSpec, devPulse, ejectSpec, relay, spawnEnemy, stepSim } from './sim'
 import { drawUI } from './ui'
 import { playMusic, renderMusic, toggleMute, zzfx, zzfxX } from './zzfx'
@@ -32,6 +32,11 @@ renderMusic()
 const GLYPHS = 'c601576|c601576ae|012,17d,cde|2137bdc|c60428e|c63158e,678|012,17d|012,17d,cde|2139de|c63158e,678'.split('|')
 export let titling = true // true while the title is showing (drives pre-start pulse flow)
 export let trans = 0
+// direction of the current `trans` fade at its black midpoint: false = title->game (reset the
+// game world), true = game-over->title (rebuild the title). Set when a fade is kicked off.
+// Exported so the sim tick stops redrawing the HUD the moment a game-over fade starts (before
+// `titling` flips at the fade's midpoint) — otherwise the HUD flashes back mid-fade.
+export let toMenu = false
 // page-load intro: seconds since load. Held black for the first INTRO_HOLD, then the black
 // fades out over the next second (see render). Purely a load-in flourish.
 export let intro = 0
@@ -121,6 +126,16 @@ function reset() {
     const rad = LT.patchSpacing * i ** 0.7, a = i * GOLDEN
     spawnPatch(SPAWN.x + Math.cos(a) * rad, SPAWN.y + Math.sin(a) * rad)
   }
+}
+
+// tear the game world down and rebuild the title screen (used on game over, under the black
+// fade). Mirrors the fresh-load path: origin-centered camera, empty world, then titleScreen().
+function toTitle() {
+  S.enemies = []; S.pulses = []; S.parts = []; S.shots = []; S.emits = []; S.buildings = []; S.nodes = []
+  S.sel = null; S.mode = 'select'; S.revealed = []
+  SPAWN.x = SPAWN.y = S.camX = S.camY = 0
+  titling = true
+  titleScreen()
 }
 
 // --- input: scroll to zoom, drag to pan, click to select/place ---
@@ -351,13 +366,23 @@ function loop(now: number) {
     if ((relayT -= dt) <= 0) { relayT = .1; S.buildings.forEach((b) => b.emit && relay(b, 0)) }
     if ((enemyT -= dt) <= 0) { enemyT = .8; spawnEnemy() }
   }
-  // start transition: advance trans (1s per phase). Cross 1 → swap title out for the game
-  // under the full-black cover; render draws the fade from `trans` (see render).
+  // GAME OVER: once in-game (not already fading), if the player has lost every building they
+  // own (only the indestructible color crystals remain), kick off a fade back to the title.
+  if (!titling && !trans && !S.buildings.some((b) => b.crystalCol == null)) {
+    toMenu = true
+    trans = 0.0001 // start the fade (same machinery as title->game)
+    H.innerHTML = '' // hide the toolbar/HUD immediately, before the fade begins
+  }
+  // transition fade: advance trans (1 phase per ~1.3s). Cross 1 → swap under the full-black
+  // cover; render draws the fade from `trans` (see render). Direction is `toMenu`.
   if (trans > 0 && trans < 2) {
     const was = trans < 1
     trans = Math.min(2, trans + dt / 1.3) // ~1.3s cover (0→1) + ~1.3s reveal (1→2)
-    // cross into black: swap the title for the freshly-reset game (dayT back to morning)
-    if (was && trans >= 1) { titling = false; reset(); }
+    // cross into black: rebuild the title (game over) or the freshly-reset game (title start)
+    if (was && trans >= 1) { if (toMenu) toTitle(); else { titling = false; reset() } }
+    // fade complete: reset the machinery to idle (trans 0) so the next transition — a click to
+    // start (gates on !trans) or a game-over fade (gates on !trans) — can fire cleanly.
+    if (trans >= 2) { trans = 0; toMenu = false }
   }
   computeSun(LT.dayT)
   render()
