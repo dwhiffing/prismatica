@@ -554,22 +554,19 @@ export function render() {
   // building, filled even-odd so the already-drawn world shows through the holes and only
   // the unrevealed area is darkened. REVEAL is a world distance, so scale by zoom.
   if (FOG) {
-    // Persistent fog of war: the first time a building finishes, its world position is
-    // recorded into S.revealed (grows only, never cleared). Each frame we re-project every
-    // revealed point and punch it out of a black offscreen buffer via destination-out
-    // (overlaps merge cleanly, world untouched), then blit the buffer over the scene. Since
-    // reveals are stored in WORLD space and re-projected, they stay put through pan/zoom and
-    // survive the building being destroyed. REVEAL is a world distance, so scale by zoom.
-    for (const b of buildings)
-      if (b.bp == null && !b.rv && !b.crystalCol) { b.rv = true; S.revealed.push({ x: b.x, y: b.y }) }
+    // Fog of war tied to LIVING buildings: each frame, punch a soft circular cutout at every
+    // finished building's current position out of a black offscreen buffer (destination-out, so
+    // overlaps merge cleanly), then blit it over the scene. Sight follows your buildings — sell
+    // or lose one and its area goes dark again. REVEAL is a world distance, so scale by zoom.
     if (FC.width !== V.W || FC.height !== V.Hh) { FC.width = V.W; FC.height = V.Hh }
     FX.clearRect(0, 0, V.W, V.Hh)
     FX.fillStyle = '#000'
     FX.fillRect(0, 0, V.W, V.Hh)
     FX.globalCompositeOperation = 'destination-out'
     const rr = REVEAL * S.ZOOM
-    for (const p of S.revealed) {
-      const [sx, sy] = iso(p.x, 0, p.y)
+    for (const b of buildings) {
+      if (b.bp != null || b.crystalCol != null) continue // skip under-construction + color crystals
+      const [sx, sy] = iso(b.x, 0, b.y)
       const gr = FX.createRadialGradient(sx, sy, 0, sx, sy, rr)
       gr.addColorStop(0, '#000'); gr.addColorStop(1, 'rgba(0,0,0,0)')
       FX.fillStyle = gr

@@ -16,9 +16,9 @@ export function drawThreat() {
     const [sx, sy] = iso(e.x, 0, e.y)
     // on screen already? no arrow needed
     if (sx >= 0 && sx <= V.W && sy >= 0 && sy <= V.Hh) continue
-    // with fog on, only warn about enemies in REVEALED territory — ones lost in the fog
-    // stay unknown. (FOG is a build-time literal, so this whole check DCEs when off.)
-    if (FOG && !S.revealed.some((p) => near(e, p, REVEAL))) continue
+    // with fog on, only warn about enemies within sight of a living building — ones lost in the
+    // fog stay unknown. (FOG is a build-time literal, so this whole check DCEs when off.)
+    if (FOG && !S.buildings.some((b) => b.bp == null && near(e, b, REVEAL))) continue
     // direction from screen center to the enemy; clamp the arrow tip to the edge inset
     const dx = sx - cx, dy = sy - cy
     const a = Math.atan2(dy, dx)

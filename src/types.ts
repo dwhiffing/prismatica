@@ -35,7 +35,6 @@ export interface Building extends Pt {
   elem?: number // 0..6 element (derived: cols[perm][1]); undefined = none
   bonus?: number // 0..6 bonus (derived: cols[perm][2]); undefined = none
   beamA?: number // red-laser weapon: continuous-beam intensity 0..1 (ramps up, fades on empty)
-  rv?: boolean // fog: this finished building has been recorded into S.revealed
   load?: number // link: energy units passed through this second (reset each tick); over
   // LINK_MAX it overloads — excess is burned and the link draws red until the next reset
   crystalCol?: number // if set: world color crystal; ORs this color bit into passing energy (4=R,2=G,1=B)

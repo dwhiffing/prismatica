@@ -39,7 +39,6 @@ export const S = {
   spawnT: 0, // enemies already spawned in the current threat level
   threat: 0, // threat level: +1 each minute; level N spawns N enemies over that minute
   t: 0, // elapsed seconds
-  revealed: [] as Pt[], // world points permanently uncovered by fog of war (grows only)
   ZOOM: INIT_ZOOM, // camera zoom (scroll wheel to change; clamped MIN_ZOOM..MAX_ZOOM)
   camX: 0,
   camY: 0, // world-space point centered on screen
