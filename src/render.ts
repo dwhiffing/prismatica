@@ -301,7 +301,7 @@ export function render() {
     // a built, non-upgrading tower that isn't full shows its stored power as a segmented ring
     // (e/CHARGE): bright yellow filled, dark yellow empty. floor() so partial charge never
     // rounds up to look full. Hidden only once fully charged.
-    else if (b.t === 'T' && !b.up && b.e < CHARGE)
+    else if (b.t === 'T' && b.e < CHARGE)
       chunkRing(b.x, b.y, R[b.t] + 5, CHARGE, Math.floor(b.e), '#fe4', '#540')
 
   // Two levers keep the frame cheap with hundreds of entities:
@@ -346,7 +346,7 @@ export function render() {
           // by its ELEMENT (2nd orb); other buildings keep their own color.
           b.load! > LINK_MAX ? '#f33'
             : b.t === 'L' && !b.crystalCol ? FILTCOL[b.filt || 0]
-            : b.t === 'T' ? (b.up ? '#444' : b.elem != null ? PIPCOL[b.elem] : undefined) : undefined,
+            : b.t === 'T' ? (b.elem != null ? PIPCOL[b.elem] : undefined) : undefined,
           b.t === 'M' && starved(b) ? '#a4f' : undefined)
     for (const e of enemies)
       if (onScreen(e)) entityFaces(ENTITIES.E, e.x, e.y, escale(e), faces, enemyTint(e), undefined, 0, enemyTintA(e))
@@ -495,7 +495,7 @@ export function render() {
     }
   // upgraded-tower aura: a fully specced tower glows in its BONUS (3rd orb) color.
   for (const b of buildings)
-    if (b.t === 'T' && !b.up && b.bonus != null) {
+    if (b.t === 'T' && b.bonus != null) {
       const [ax, ay] = g(b.x, b.y, 12)
       glow(ax, ay, PIPRGB[b.bonus], 0.7, 1.4)
     }
@@ -511,17 +511,15 @@ export function render() {
     X.fillStyle = '#f44'; X.fillRect(bx, cy, w * Math.max(0, e.hp) / (e.hp0 || 1), 3) // hp
     if (e.sh! > 0) { X.fillStyle = '#4ff'; X.fillRect(bx, cy, w * e.sh! / e.sh0!, 3) } // shield on top
   }
-  // upgrade pips: 3 slots above any upgraded OR upgrading tower. Each FILLED slot is tinted by
-  // the actual color of the orb it holds (weapon / element / bonus), so red energy reads red.
-  // Mid-upgrade fills `up-1`; a completed tower (up cleared, weapon set) shows all 3. The bar
-  // stays after upgrading and only empties when F re-triggers (clears weapon, up=1).
+  // spec pips: 3 slots above any tower holding at least one absorbed color. Each FILLED slot
+  // (weapon / element / bonus, in the tower's current perm order) is tinted by that color, so
+  // red energy reads red; empty slots are gray. Tapping F reorders which color sits in which.
   for (const b of buildings)
-    if (b.t === 'T' && (b.up || b.weapon != null)) {
-      const filled = b.up ? b.up - 1 : 3 // partial while upgrading, full once done
-      const orbs = [b.weapon, b.elem, b.bonus] // color-index (0..6) per slot
+    if (b.t === 'T' && b.cols && b.cols.length) {
+      const orbs = [b.weapon, b.elem, b.bonus] // color-index (0..6) per slot (undefined = empty)
       const [cx, cy] = g(b.x, b.y, 30)
       for (let i = 0; i < 3; i++) {
-        X.fillStyle = i < filled ? PIPCOL[orbs[i]!] : '#555'
+        X.fillStyle = orbs[i] != null ? PIPCOL[orbs[i]!] : '#555'
         X.fillRect(cx - 8 + i * 6, cy, 4, 4)
       }
     }

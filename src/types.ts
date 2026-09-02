@@ -24,11 +24,16 @@ export interface Building extends Pt {
   ni?: number // round-robin index for cycling through neighbors when relaying energy
   route?: Building | null // forced relay target (set via 'z'); overrides round-robin
   // --- upgrade system (towers) ---
-  up?: number // upgrade progress: 0/undefined = active; 1/2/3 = in upgrade mode, orbs absorbed
-  // so far (disabled until it absorbs 3). Orb1->weapon, orb2->elem, orb3->bonus.
-  weapon?: number // 0..6 weapon type (from orb 1's color); undefined = peashooter
-  elem?: number // 0..6 element (orb 2); undefined = none
-  bonus?: number // 0..6 bonus (orb 3); undefined = none
+  // A tower absorbs colored energy (up to 3 units) as it fires; the ordered colors it holds
+  // spell out its spec. cols = absorbed color-indices (0..6) in arrival order; perm = which of
+  // the 6 orderings is currently applied (tap F to cycle). weapon/elem/bonus are DERIVED from
+  // cols[perm] by applyCols(): 1st slot -> weapon, 2nd -> elem, 3rd -> bonus (fewer than 3 held
+  // = partial spec). A tower with <3 cols keeps absorbing colored energy.
+  cols?: number[] // absorbed color-indices in arrival order (length 0..3)
+  perm?: number // 0..5: index into PERMS, the ordering applied to cols (F cycles it)
+  weapon?: number // 0..6 weapon type (derived: cols[perm][0]); undefined = peashooter
+  elem?: number // 0..6 element (derived: cols[perm][1]); undefined = none
+  bonus?: number // 0..6 bonus (derived: cols[perm][2]); undefined = none
   beamA?: number // red-laser weapon: continuous-beam intensity 0..1 (ramps up, fades on empty)
   rv?: boolean // fog: this finished building has been recorded into S.revealed
   load?: number // link: energy units passed through this second (reset each tick); over

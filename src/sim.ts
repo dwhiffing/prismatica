@@ -11,6 +11,15 @@ import { titling } from './game'
 const COLIDX: Record<number, number> = { 2: 0, 4: 1, 1: 2, 6: 3, 3: 4, 5: 5, 7: 6 }
 // upgrade index 0..6 -> energy color bitmask (inverse of COLIDX; for releasing held orbs)
 const IDXCOL = [2, 4, 1, 6, 3, 5, 7]
+// the 6 orderings of 3 slots. Tapping F steps a tower's `perm` through these, re-slotting its
+// absorbed colors into weapon/elem/bonus — so any of the 3! assignments is reachable.
+const PERMS = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]]
+// derive weapon/elem/bonus from a tower's absorbed colors, reordered by its current perm.
+// Only slots that actually have a color are set; the rest clear (partial spec applies as-is).
+export function applyCols(b: Building) {
+  const cs = b.cols || [], o = PERMS[b.perm || 0]
+  b.weapon = cs[o[0]]; b.elem = cs[o[1]]; b.bonus = cs[o[2]] // undefined where cs has no color
+}
 // element (0..6) -> projectile "r,g,b" tint (matches the render PIPRGB order).
 const ECOL = ['68,255,102', '255,68,68', '68,136,255', '238,238,68', '68,255,255', '255,68,255', '255,255,255']
 // a shot's color: the firing tower's element tint if it has one, else the weapon's default.
@@ -56,14 +65,17 @@ function hop(from: Pt, to: Building, col = 0) {
   S.pulses.push({ x: from.x, y: from.y, tx: to.x, ty: to.y, p: 0, len, dst: to, col })
 }
 
+// does a tower still have room to absorb a colored energy unit (fewer than 3 specced)?
+const towerRoom = (o: Building) => o.t === 'T' && (o.cols?.length || 0) < 3
 // can building `o` receive energy of color `col`? A link forwards (or builds while under
-// construction); anything else must still WANT a unit — excluding full miners/towers and
-// finished solars. A link's color filter (filt) also rejects energy lacking that component.
-// COLORED energy is only ever CONSUMED by a tower in upgrade mode (as an orb); every other
-// consumer takes uncolored energy only, so colored energy is never lost — it routes onward
-// (relayed by links, recolored by crystals) until it reaches an upgrading tower.
+// construction). COLORED energy is only ever CONSUMED by a tower with spec room — and it takes
+// it regardless of firing charge, so a fully-charged tower still upgrades. UNCOLORED energy
+// goes to anything that WANTS a unit (excludes full miners/towers and finished solars). A
+// link's color filter (filt) rejects energy lacking that component. Colored energy is never
+// lost — it routes onward (relayed by links, recolored by crystals) until it finds a tower.
 const accepts = (o: Building, col: number) =>
-  (o.t === 'L' || wants(o)) && (!o.filt || col & o.filt) && (!col || o.t === 'L' || (o.t === 'T' && !!o.up))
+  (!o.filt || col & o.filt) &&
+  (col ? o.t === 'L' || towerRoom(o) : o.t === 'L' || wants(o))
 // relay a unit onward FROM `node`, preserving its energy color.
 export function relay(node: Building, col = 0) {
   if (node.drain) return // title drain node: energy arrives and is consumed, never forwarded
@@ -137,7 +149,7 @@ export function devPulse(x: number, y: number, col: number) {
     for (const o of S.buildings) { const dd = d2(o); if (dd < bd && pred(o)) { bd = dd; best = o } }
     return best
   }
-  const target = pick((o) => !!o.up) || pick((o) => !!accepts(o, col))
+  const target = pick(towerRoom) || pick((o) => !!accepts(o, col))
   if (target) hop(from, target, col)
 }
 
@@ -155,17 +167,36 @@ function emitOrb(b: Building, col: number) {
   else spawnParts(b.x, b.y, 8, 60, `${col & 4 ? 255 : 60},${col & 2 ? 255 : 60},${col & 1 ? 255 : 60}`)
 }
 
-// put tower `b` into upgrade mode. First RELEASE any colored orbs it holds (weapon/elem/bonus)
-// back into the world — queued with a 150ms stagger so they don't clump — so nothing is lost.
-export function enterUpgrade(b: Building) {
+// HOLD F: eject everything the tower holds and reset it to a bare peashooter. Its absorbed
+// colors are released back into the world as orbs (150ms stagger so they don't clump), and its
+// stored uncolored charge bursts as particles — nothing is silently lost.
+export function ejectSpec(b: Building) {
   let delay = 0
-  for (const idx of [b.weapon, b.elem, b.bonus]) if (idx != null) {
+  for (const idx of b.cols || []) {
     S.emits.push([delay, b, IDXCOL[idx]])
     delay += 0.15 // 150ms stagger between released orbs
   }
-  b.up = 1
+  if (b.e > 0) spawnParts(b.x, b.y, 8, 60, '255,238,140') // release stored (uncolored) charge
+  b.cols = []
+  b.perm = 0
   b.e = 0
-  b.weapon = b.elem = b.bonus = undefined
+  applyCols(b) // clears weapon/elem/bonus
+}
+
+// TAP F (only with a full 3-color spec): step to the next ordering that actually changes the
+// weapon/elem/bonus arrangement, re-slotting the same three colors. When colors repeat, some
+// permutations are identical to the current one — skip those. If every ordering is identical
+// (all 3 colors the same), it's a no-op (up to 5 steps then wraps back to where it started).
+export function cycleSpec(b: Building) {
+  const cs = b.cols
+  if (!cs || cs.length < 3) return
+  const key = (p: number) => { const o = PERMS[p]; return cs[o[0]] + ',' + cs[o[1]] + ',' + cs[o[2]] }
+  const cur = key(b.perm || 0)
+  for (let i = 0; i < 5; i++) {
+    b.perm = ((b.perm || 0) + 1) % 6
+    if (key(b.perm) !== cur) break // found a distinct arrangement
+  }
+  applyCols(b)
 }
 
 function pickTarget(): Building | null {
@@ -329,7 +360,7 @@ export function stepSim(dt: number) {
   acc += dt
   while (acc >= 1) { acc -= 1; tick() }
 
-  // fire any staggered orb-releases whose delay has elapsed (see enterUpgrade)
+  // fire any staggered orb-releases whose delay has elapsed (see ejectSpec)
   for (const em of S.emits) em[0] -= dt
   for (const em of S.emits) if (em[0] <= 0) emitOrb(em[1], em[2])
   S.emits = S.emits.filter((em) => em[0] > 0)
@@ -351,7 +382,7 @@ export function stepSim(dt: number) {
   // towers fire at enemies in range
   for (const b of S.buildings) {
     if (building(b)) continue // under construction — doesn't operate yet
-    if (b.t === 'T' && !b.up) { // a tower in upgrade mode (up>0) is disabled until it's specced
+    if (b.t === 'T') { // towers always fire (spec derives from absorbed colors; peashooter until then)
       const w = wepOf(b) // the tower's weapon stats (or peashooter default)
       if (w.beam) {
         // LASER (continuous beam): fires for LASER_ON seconds, then must cool down for LASER_OFF
@@ -363,8 +394,15 @@ export function stepSim(dt: number) {
         const cd = b.cd || 0
         const cooling = cd < 0
         const blastCost = LASER_DRAIN * w.eng * LASER_ON
-        // can fire if not cooling and (mid-blast, or has enough banked to pay for a fresh blast)
-        const en = !cooling && (cd > 0 || b.e >= blastCost) ? pickEnemy(b, TOWER_RANGE * w.rng, w.tgt) : null
+        const rng = TOWER_RANGE * w.rng
+        // LOCK targeting for the duration of a blast: mid-blast (cd>0) keep hitting the current
+        // target as long as it's alive and in range — so hp-based modes don't rapidly cycle as
+        // the beam whittles the enemy down. Only re-pick when STARTING a blast or the lock is
+        // lost (target died / left range).
+        const locked = cd > 0 && b.fx && b.fx.hp > 0 && S.enemies.includes(b.fx) && near(b, b.fx, rng)
+          ? b.fx : null
+        const en = cooling || (cd <= 0 && b.e < blastCost) ? null
+          : locked || pickEnemy(b, rng, w.tgt)
         if (en) {
           b.fx = en
           b.beamA = Math.min(1, (b.beamA || 0) + dt * 6) // ramp on
@@ -587,15 +625,12 @@ export function stepSim(dt: number) {
         // then relay onward. Subject to the same overload cap as regular links (excess burns).
         if ((d.load = (d.load || 0) + 1) <= LINK_MAX) relay(d, inCol | d.crystalCol)
         else spawnParts(d.x, d.y, 8, 60, col)
-      } else if (d.up && inCol) {
-        // UPGRADE ORB: a tower in upgrade mode absorbs the next colored pulse. orb1->weapon,
-        // orb2->elem, orb3->bonus (each a 0..6 color index); on the 3rd it re-activates (up=0).
-        const ci = COLIDX[inCol]
-        if (d.up === 1) d.weapon = ci
-        else if (d.up === 2) d.elem = ci
-        else d.bonus = ci
+      } else if (inCol && towerRoom(d)) {
+        // COLORED energy into a tower with spec room: append its color-index to the tower's
+        // ordered spec and re-derive weapon/elem/bonus. The tower keeps firing throughout.
+        ;(d.cols = d.cols || []).push(COLIDX[inCol])
+        applyCols(d)
         spawnParts(d.x, d.y, 10, 70, col) // absorb burst in the orb's color
-        d.up = d.up < 3 ? d.up + 1 : 0 // 3rd orb completes -> active
       } else if (wants(d) && !inCol) {
         feed(d) // consumer keeps UNCOLORED energy (charge/build); colored energy is never eaten
       // otherwise it's a finished link (forward), or a miner/tower that filled up while the

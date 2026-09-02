@@ -14,7 +14,7 @@ import { render } from './render'
 import { inMinimap, mmToWorld } from './minimap'
 import { miscSounds } from './sounds'
 import { C, LT, resize, S, SPAWN, V } from './state'
-import { devPulse, enterUpgrade, relay, spawnEnemy, spawnParts, stepSim } from './sim'
+import { cycleSpec, devPulse, ejectSpec, relay, spawnEnemy, stepSim } from './sim'
 import { drawUI } from './ui'
 import { playMusic, renderMusic, toggleMute, zzfx, zzfxX } from './zzfx'
 import type { BType, Building, EType } from './types'
@@ -318,13 +318,20 @@ addEventListener('keydown', (e: KeyboardEvent) => {
     S.sel = null
     drawUI()
   }
-  // 'f': put the selected tower into UPGRADE MODE. It stops firing and waits for 3 colored
-  // orbs (weapon/element/bonus). If it was already upgraded, this releases its stored energy
-  // and clears its config so it can be re-specced.
-  if (e.key === 'f' && S.sel && S.sel.t === 'T' && S.sel.bp == null) {
-    if (S.sel.e > 0) spawnParts(S.sel.x, S.sel.y, 8, 60, '255,238,140') // release stored (uncolored) charge
-    enterUpgrade(S.sel) // releases held colored orbs, then puts it in upgrade mode
-    drawUI()
+  // 'f' on a selected tower: HOLD (500ms) ejects its whole spec + charge; a quick TAP cycles
+  // the color order (weapon/elem/bonus) when it holds a full 3-color spec. keydown arms a
+  // hold-timer; keyup before it fires counts as a tap (see fHold below).
+  if (e.key === 'f' && !e.repeat && S.sel && S.sel.t === 'T' && S.sel.bp == null && fHold == null) {
+    const tgt = S.sel
+    fHold = setTimeout(() => { fHold = null; ejectSpec(tgt); drawUI() }, 500)
+  }
+})
+let fHold: ReturnType<typeof setTimeout> | null = null
+addEventListener('keyup', (e: KeyboardEvent) => {
+  if (e.key === 'f' && fHold != null) {
+    clearTimeout(fHold) // released before the 500ms hold fired -> it's a tap
+    fHold = null
+    if (S.sel && S.sel.t === 'T') { cycleSpec(S.sel); drawUI() }
   }
 })
 
