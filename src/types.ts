@@ -13,7 +13,7 @@ export interface Pt {
 export interface Building extends Pt {
   t: BType
   e: number // stored energy
-  hp: number
+  dead?: number // set when an enemy reaches it — one hit destroys a building (then filtered out)
   cd: number // cooldown timer
   bp?: number // build power remaining (>0 = under construction); undefined/0 = complete
   fx?: Enemy | null // tower beam target
@@ -23,6 +23,13 @@ export interface Building extends Pt {
   sh?: number // miner: shots left on the current energy charge
   ni?: number // round-robin index for cycling through neighbors when relaying energy
   route?: Building | null // forced relay target (set via 'z'); overrides round-robin
+  // --- upgrade system (towers) ---
+  up?: number // upgrade progress: 0/undefined = active; 1/2/3 = in upgrade mode, orbs absorbed
+  // so far (disabled until it absorbs 3). Orb1->weapon, orb2->elem, orb3->bonus.
+  weapon?: number // 0..6 weapon type (from orb 1's color); undefined = peashooter
+  elem?: number // 0..6 element (orb 2); undefined = none
+  bonus?: number // 0..6 bonus (orb 3); undefined = none
+  beamA?: number // red-laser weapon: continuous-beam intensity 0..1 (ramps up, fades on empty)
   rv?: boolean // fog: this finished building has been recorded into S.revealed
   load?: number // link: energy units passed through this second (reset each tick); over
   // LINK_MAX it overloads — excess is burned and the link draws red until the next reset
@@ -42,7 +49,41 @@ export interface ResNode extends Pt {
 }
 export interface Enemy extends Pt {
   hp: number
+  hp0?: number // spawn hp (max), for fire's "dies at 10%" threshold
   target?: Building | null
+  kx?: number // knockback velocity (world units/sec); decays each frame — a shove, not a teleport
+  ky?: number
+  // --- element afflictions (each a remaining-seconds timer; 0/undefined = not affected) ---
+  acidT?: number // green acid: damage over time
+  fireT?: number // red fire: dies at 10% hp; explodes on death
+  wetT?: number // blue water: takes +10% damage
+  stunT?: number // yellow lightning: can't move (re-applied on each hit while affected)
+  slowT?: number // cyan cold: movement halved (also legacy slow-rocket)
+  arcT?: number // magenta arcane: damage taken is shared to nearby arcane-affected enemies
+  convT?: number // white converted: flees its target instead of advancing
+}
+// a flying projectile from a tower (bullets & rockets; lasers are instant beams, no shot).
+export interface Shot extends Pt {
+  vx: number
+  vy: number
+  target: Enemy | null // homing target (rocket) or lead-aim reference (bullet); may die mid-flight
+  tx: number // world aim point (bullet: lead-predicted or wide-miss point)
+  ty: number
+  rocket?: boolean // true = rocket (homing arc + smoke + explosion), else bullet
+  dmg: number // damage on hit (0 = a bullet that missed — still flies, deals nothing)
+  kb: number // knockback distance applied to the enemy on hit
+  age: number // seconds alive (drives the rocket's up-first launch arc)
+  life?: number // bullet: seconds it flies before expiring — with speed, sets its RANGE
+  st?: number // rocket smoke-trail spawn accumulator
+  slow?: number // seconds of slow this rocket applies on hit (slow-rocket variant)
+  big?: boolean // long-range rocket (faster; drawn a touch larger)
+  col: string // "r,g,b" tint for the orb, its trail, and (rockets) the explosion
+  elem?: number // the firing tower's element (0..6), applied to enemies this shot damages
+  sz?: number // visual size multiplier for the drawn orb (flamethrower puffs are big)
+  pierce?: number // railgun: hits remaining before the shot is consumed (passes through enemies)
+  bounce?: number // bouncing shot: bounces remaining (redirected to a new enemy on each hit)
+  straight?: boolean // grenade: an explosive shot that flies straight (no homing) then detonates
+  hits?: Enemy[] // piercing shot: enemies already damaged, so it hits each only once
 }
 export interface Pulse {
   x: number

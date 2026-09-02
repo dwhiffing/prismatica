@@ -1,6 +1,7 @@
 // Rendering: 3D face projection, shadows, ground, and the top-level render().
 import {
   BUILD,
+  CHARGE,
   COST,
   LINK_MAX,
   LINK_RANGE,
@@ -24,11 +25,21 @@ declare const MINIMAP: boolean
 declare const FOG: boolean
 import { ENTITIES, type Entity } from './models'
 import { LT, S, SUN, V, X } from './state'
+import { wepRng } from './sim'
 import { intro, INTRO_HOLD, titling, trans } from './game'
-import type { Face, V3 } from './types'
+import type { Enemy, Face, V3 } from './types'
 
 // link color-filter tint, indexed by the filter bitmask (0=any/yellow, 1=B, 2=G, 4=R)
 const FILTCOL = ['#ee4', '#48f', '#4f6', , '#f44']
+// upgrade-orb color by color-index 0..6: green, red, blue, yellow, cyan, magenta, white.
+// PIPCOL = hex (pips + body tint); PIPRGB = "r,g,b" (for glow, which wants an rgb string).
+const PIPCOL = ['#4f6', '#f44', '#48f', '#ee4', '#4ff', '#f4f', '#fff']
+const PIPRGB = ['68,255,102', '255,68,68', '68,136,255', '238,238,68', '68,255,255', '255,68,255', '255,255,255']
+// tint an enemy by its active element affliction (fire/acid first, then the rest); none = base.
+const enemyTint = (e: Enemy) =>
+  e.fireT! > 0 ? '#f52' : e.acidT! > 0 ? PIPCOL[0] : e.stunT! > 0 ? PIPCOL[3]
+    : e.slowT! > 0 ? PIPCOL[4] : e.convT! > 0 ? PIPCOL[6] : e.arcT! > 0 ? PIPCOL[5]
+    : e.wetT! > 0 ? PIPCOL[2] : undefined
 
 function tp(pts: [number, number][]) { pts.forEach(([x, y], i) => i ? X.lineTo(x, y) : X.moveTo(x, y)) }
 function xv([x, y, z]: V3, sp: { scl: number; rot: V3 }) { return rotate([x * sp.scl, y * sp.scl, z * sp.scl], sp.rot) }
@@ -122,13 +133,13 @@ function groundRing(
 // construction ring: `n` even chunks laid on the GROUND plane (projected through iso,
 // so the far/top edge foreshortens correctly). chunk boundaries divide the ground-plane
 // angle evenly. first `done` chunks light green, the rest dark green.
-function chunkRing(gx: number, gy: number, r: number, n: number, done: number) {
+function chunkRing(gx: number, gy: number, r: number, n: number, done: number, col = '#7fb', empty = '#161') {
   const slot = (Math.PI * 2) / n
   const gap = Math.min(slot * 0.4, 0.15) // constant angular gap between chunks
   const seg = Math.max(2, Math.ceil((slot - gap) / 0.25)) // enough segments to stay smooth
   X.lineWidth = 4
   for (let k = 0; k < n; k++) {
-    X.strokeStyle = k < done ? '#7fb' : '#161'
+    X.strokeStyle = k < done ? col : empty
     X.beginPath()
     const a0 = k * slot + gap / 2 - Math.PI / 2
     for (let i = 0; i <= seg; i++) {
@@ -141,12 +152,13 @@ function chunkRing(gx: number, gy: number, r: number, n: number, done: number) {
   X.lineWidth = 1
 }
 
-// draw a building's range rings: a shared yellow link ring for every energy
-// building, plus a green mine ring (miners) or red shoot ring (towers).
-function drawRanges(t: BType, gx: number, gy: number, alpha = 0.5) {
+// draw a building's range rings: a shared yellow link ring for every energy building, plus
+// a green mine ring (miners) or red shoot ring (towers). `rng` scales the tower ring by the
+// selected weapon's range multiplier so the ring updates when the weapon changes.
+function drawRanges(t: BType, gx: number, gy: number, alpha = 0.5, rng = 1) {
   groundRing(gx, gy, LINK_RANGE, '#fd4', alpha, 2) // yellow: energy link range (all)
   if (t === 'M') groundRing(gx, gy, MINE_RANGE, '#4f6', alpha, 2) // green: mine range
-  if (t === 'T') groundRing(gx, gy, TOWER_RANGE, '#f66', alpha, 2) // red: shoot range
+  if (t === 'T') groundRing(gx, gy, TOWER_RANGE * rng, '#f66', alpha, 2) // red: shoot range
 }
 
 // project an entity's vertices onto the ground along the light, then hull them
@@ -257,12 +269,16 @@ export function render() {
   if (S.sel && !buildings.includes(S.sel)) S.sel = null // selection was destroyed
 
   // range rings: only for the selected building (placement preview shows its own).
-  if (S.sel) drawRanges(S.sel.t, S.sel.x, S.sel.y, 0.5)
+  if (S.sel) drawRanges(S.sel.t, S.sel.x, S.sel.y, 0.5, S.sel.t === 'T' ? wepRng(S.sel) : 1)
   // construction progress ring (green chunks). Silhouette outlines (selected crystal +
   // buildings) are drawn later, on top of their models.
   for (const b of buildings)
     if (b.bp != null)
       chunkRing(b.x, b.y, R[b.t] + 5, BUILD[b.t], BUILD[b.t] - b.bp)
+    // a built, non-upgrading tower that isn't full shows its stored power as a segmented ring
+    // (e/CHARGE): bright yellow filled, dark yellow empty. Hidden entirely once fully charged.
+    else if (b.t === 'T' && !b.up && b.e < CHARGE)
+      chunkRing(b.x, b.y, R[b.t] + 5, CHARGE, Math.round(b.e), '#fe4', '#540')
 
   // Two levers keep the frame cheap with hundreds of entities:
   //  - viewport cull (onScreen): off-screen entities are skipped everywhere.
@@ -301,13 +317,15 @@ export function render() {
     for (const b of buildings)
       if (b.bp == null && onScreen(b))
         entityFaces(ENTITIES[b.ek ?? b.t], b.x, b.y, 1, faces,
-          // overloaded link flashes red; else a link is tinted by its color filter
-          // (yellow=any, R/G/B); other buildings keep their own color.
+          // overloaded link flashes red; a link is tinted by its color filter (yellow=any,
+          // R/G/B); a tower in upgrade mode reads dark (disabled), an upgraded tower is tinted
+          // by its ELEMENT (2nd orb); other buildings keep their own color.
           b.load! > LINK_MAX ? '#f33'
-            : b.t === 'L' && !b.crystalCol ? FILTCOL[b.filt || 0] : undefined,
+            : b.t === 'L' && !b.crystalCol ? FILTCOL[b.filt || 0]
+            : b.t === 'T' ? (b.up ? '#444' : b.elem != null ? PIPCOL[b.elem] : undefined) : undefined,
           b.t === 'M' && starved(b) ? '#a4f' : undefined)
     for (const e of enemies)
-      if (onScreen(e)) entityFaces(ENTITIES.E, e.x, e.y, 1, faces)
+      if (onScreen(e)) entityFaces(ENTITIES.E, e.x, e.y, 1, faces, enemyTint(e))
     faces.sort((a, b) => a.d - b.d)
     for (const f of faces) fillFace(f)
     X.globalAlpha = 1 // reset after translucent (crystal) faces
@@ -416,16 +434,22 @@ export function render() {
 
   // tower + miner beams use the UNCOLORED energy look (warm dim white, = PCOLS[0])
   const UNCOL = '255,238,140'
-  // tower beams: the head fires at an enemy, with a glow at the tower origin
-  X.strokeStyle = '#feb'
-  X.lineWidth = 2
+  // LASER beam (weapon 1): a thick hitscan beam. Tinted by the tower's ELEMENT (or red if none).
+  // Its intensity is beamA (ramps up while firing, fades as energy runs out) — driving beam
+  // alpha and the muzzle/impact glow.
   for (const b of buildings)
-    if (b.t === 'T' && b.fxt && b.fxt > 0 && b.fx) {
-      const [ax, ay] = g(b.x, b.y, 20),
-        [bx, by] = g(b.fx.x, b.fx.y, 7)
-      glow(ax, ay, UNCOL)
+    if (b.t === 'T' && b.beamA && b.beamA > 0.01 && b.fx) {
+      const hex = b.elem != null ? PIPCOL[b.elem] : '#f22'
+      const rgb = b.elem != null ? PIPRGB[b.elem] : '255,40,40'
+      const [ax, ay] = g(b.x, b.y, 20), [bx, by] = g(b.fx.x, b.fx.y, 7)
+      X.strokeStyle = hex; X.lineWidth = 4; X.globalAlpha = b.beamA
+      glow(ax, ay, rgb, b.beamA, 1.3) // muzzle glow
       beam(ax, ay, bx, by)
+      glow(bx, by, rgb, b.beamA, 0.8) // impact flare
     }
+  X.globalAlpha = 1
+  X.lineWidth = 2
+  X.strokeStyle = '#feb'
   // miner lasers: fade in over the first 300ms and out over the last 300ms of the 1s cut.
   // An uncolored glow (same soft radial style as energy pulses) pulses at the laser origin.
   // (strokeStyle/lineWidth still '#feb'/2 from the tower loop above)
@@ -445,10 +469,43 @@ export function render() {
         glow(ax, ay, '180,110,255')
       }
     }
-  // generic particles: little glows fading as they fly out (mining sparks, etc.)
+  // upgraded-tower aura: a fully specced tower glows in its BONUS (3rd orb) color.
+  for (const b of buildings)
+    if (b.t === 'T' && !b.up && b.bonus != null) {
+      const [ax, ay] = g(b.x, b.y, 12)
+      glow(ax, ay, PIPRGB[b.bonus], 0.7, 1.4)
+    }
+  // upgrade pips: 3 slots above any upgraded OR upgrading tower. Each FILLED slot is tinted by
+  // the actual color of the orb it holds (weapon / element / bonus), so red energy reads red.
+  // Mid-upgrade fills `up-1`; a completed tower (up cleared, weapon set) shows all 3. The bar
+  // stays after upgrading and only empties when F re-triggers (clears weapon, up=1).
+  for (const b of buildings)
+    if (b.t === 'T' && (b.up || b.weapon != null)) {
+      const filled = b.up ? b.up - 1 : 3 // partial while upgrading, full once done
+      const orbs = [b.weapon, b.elem, b.bonus] // color-index (0..6) per slot
+      const [cx, cy] = g(b.x, b.y, 30)
+      for (let i = 0; i < 3; i++) {
+        X.fillStyle = i < filled ? PIPCOL[orbs[i]!] : '#555'
+        X.fillRect(cx - 8 + i * 6, cy, 4, 4)
+      }
+    }
+  // tower projectiles — orb, trail, and explosion all carry the shot's color (s.col), which is
+  // the tower's element tint (or the weapon default when it has no element).
+  for (const s of S.shots) {
+    const [sx, sy] = g(s.x, s.y, s.rocket ? 8 : 5)
+    let a = 1, sc = s.rocket ? (s.big ? 1 : 0.8) : 0.5
+    if (s.sz) {
+      // flame puff: translucent, grows small->big over its life, then fades to 0 after 80%.
+      const f = Math.min(1, s.age / (s.life || 1))
+      sc = s.sz * (0.25 + 0.75 * f) // small -> big
+      a = .35 * (f < 0.8 ? 1 : (1 - f) / 0.2) // low opacity; full then fade over the last 20%
+    }
+    glow(sx, sy, s.col, a, sc)
+  }
+  // generic particles: little glows fading as they fly out (mining sparks, explosions, smoke).
   for (const q of S.parts) {
     const [sx, sy] = g(q[0], q[1], 6)
-    glow(sx, sy, q[5], q[4], 0.5)
+    glow(sx, sy, q[5], q[4], 0.5 * (q[6] || 1)) // 7th elem scales size (big rocket explosions)
   }
   X.globalAlpha = 1
   X.lineWidth = 1

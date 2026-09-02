@@ -6,6 +6,18 @@ import type { BType, EType, V3 } from './types'
 export const LINK_RANGE = 50 // energy transfer range — same for every energy building
 export const MINE_RANGE = 30 // miner -> resource node (green ring)
 export const TOWER_RANGE = 112 // tower -> enemy base range (red ring). was 150, -25%
+// tower weapon tuning (wep: 0=laser, 1=bullet, 2=rocket)
+export const BSPEED = 240 // bullet travel speed (world units/sec)
+export const BULLET_LIFE = 0.6 // seconds a bullet flies before expiring — range = BSPEED * this
+export const RSPEED = 130 // rocket travel speed (world units/sec)
+export const KB_BULLET = 8 // enemy knockback distance on a bullet hit
+export const KB_ROCKET = 25 // enemy knockback distance on a rocket blast
+export const KB_DECAY = 8 // knockback velocity decay rate (higher = shorter, snappier slide)
+// laser fires continuously: energy/sec drained while beaming, then a firing/cooldown cycle —
+// fires for LASER_ON seconds, then must cool for LASER_OFF (shortened by the fire-rate bonus).
+export const LASER_DRAIN = 2
+export const LASER_ON = 1.5
+export const LASER_OFF = 1
 
 // --- entity sizes / economy ---
 export const R: Record<EType, number> = {
@@ -21,8 +33,8 @@ export const R: Record<EType, number> = {
   crystalB: 5,
   E: 5,
 } // pick/collision radii
-export const COST: Record<BType, number> = { S: 40, L: 5, M: 15, T: 25 } // resource cost to place
-export const BUILD: Record<BType, number> = { S: 25, L: 2, M: 8, T: 12 } // energy to construct
+export const COST: Record<BType, number> = { S: 40, L: 5, M: 15, T: 2 } // resource cost to place
+export const BUILD: Record<BType, number> = { S: 25, L: 2, M: 8, T: 2 } // energy to construct
 export const CHARGE = 5 // energy a miner/tower stores at full charge
 export const NODE_AMT = 250 // starting resources in a crystal node
 export const ENEMIES = true // master switch: set false to disable enemy spawns

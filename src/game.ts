@@ -14,7 +14,7 @@ import { render } from './render'
 import { inMinimap, mmToWorld } from './minimap'
 import { miscSounds } from './sounds'
 import { C, LT, resize, S, SPAWN, V } from './state'
-import { relay, spawnEnemy, stepSim } from './sim'
+import { devPulse, enterUpgrade, relay, spawnEnemy, spawnParts, stepSim } from './sim'
 import { drawUI } from './ui'
 import { playMusic, renderMusic, toggleMute, zzfx, zzfxX } from './zzfx'
 import type { BType, Building, EType } from './types'
@@ -75,8 +75,8 @@ function titleScreen() {
   setSeed(0)
 }
 
-// build a Building record with the shared defaults (energy 0, hp 20, no cooldown)
-const mkB = (t: BType, x: number, y: number, bp?: number): Building => ({ t, x, y, e: 0, hp: 20, cd: 0, bp })
+// build a Building record with the shared defaults (energy 0, no cooldown)
+const mkB = (t: BType, x: number, y: number, bp?: number): Building => ({ t, x, y, e: 0, cd: 0, bp })
 
 // in build mode with a Link or Tower selected, a click-drag lays a whole line of them
 // spaced at that tool's max connect range (see onpointerup).
@@ -103,7 +103,7 @@ function spawnPatch(cx: number, cy: number) {
 }
 
 function reset() {
-  S.enemies = []; S.pulses = []; S.parts = []; S.resource = 70; S.t = 0; S.spawnT = 0; S.revealed = []
+  S.enemies = []; S.pulses = []; S.parts = []; S.shots = []; S.emits = []; S.resource = 70; S.t = 0; S.spawnT = 0; S.revealed = []
   SPAWN.x = V.W / 2; SPAWN.y = V.Hh / 2; S.camX = SPAWN.x; S.camY = SPAWN.y
   LT.dayT = .35; 
   S.buildings = [mkB('S', SPAWN.x - 35, SPAWN.y), mkB('S', SPAWN.x + 35, SPAWN.y),
@@ -113,7 +113,7 @@ function reset() {
   for (let i = 0; i < 3; i++) {
     const a = -Math.PI / 2 + (i * Math.PI * 2) / 3
     const crystalCol = [4, 2, 1][i], ek = (['crystalR', 'crystalG', 'crystalB'] as EType[])[i]
-    S.buildings.push({ ...mkB('L', SPAWN.x + Math.cos(a) * 195, SPAWN.y + Math.sin(a) * 195), crystalCol, ek, hp: 9999 })
+    S.buildings.push({ ...mkB('L', SPAWN.x + Math.cos(a) * 195, SPAWN.y + Math.sin(a) * 195), crystalCol, ek })
   }
   // lay the sunflower: patch 0 at spawn, each next one rotated by GOLDEN and pushed out
   // by spacing·i^0.7 (rings spread with distance → clusters thin out further from spawn).
@@ -318,6 +318,14 @@ addEventListener('keydown', (e: KeyboardEvent) => {
     S.sel = null
     drawUI()
   }
+  // 'f': put the selected tower into UPGRADE MODE. It stops firing and waits for 3 colored
+  // orbs (weapon/element/bonus). If it was already upgraded, this releases its stored energy
+  // and clears its config so it can be re-specced.
+  if (e.key === 'f' && S.sel && S.sel.t === 'T' && S.sel.bp == null) {
+    if (S.sel.e > 0) spawnParts(S.sel.x, S.sel.y, 8, 60, '255,238,140') // release stored (uncolored) charge
+    enterUpgrade(S.sel) // releases held colored orbs, then puts it in upgrade mode
+    drawUI()
+  }
 })
 
 // --- main loop ---
@@ -367,11 +375,14 @@ if (DEV) (globalThis as any).regen = reset
 // so nothing here ships. Add more dev shortcuts inside this handler.
 declare const DEVTOOLS: boolean
 if (DEVTOOLS) {
-  addEventListener('keydown', (e: KeyboardEvent) => {
-    // 'e': spawn an enemy at the cursor
-    if (e.key === 'e' && S.mouse) {
-      const w = unproject(S.mouse.x, S.mouse.y)
-      S.enemies.push({ x: w.x, y: w.y, hp: 6 })
-    }
+  addEventListener('keydown', (ev: KeyboardEvent) => {
+    if (!S.mouse) return
+    const w = unproject(S.mouse.x, S.mouse.y)
+    // 'x': spawn an enemy at the cursor
+    if (ev.key === 'x') S.enemies.push({ x: w.x, y: w.y, hp: 10, hp0: 10 })
+    // 'q w e r t y u': fire a red/green/blue/cyan/yellow/magenta/white energy pulse at the
+    // cursor. It flies to the nearest thing in range that accepts the color, else fizzles.
+    const ki = 'qwertyu'.indexOf(ev.key)
+    if (ki >= 0) devPulse(w.x, w.y, [4, 2, 1, 3, 6, 5, 7][ki])
   })
 }

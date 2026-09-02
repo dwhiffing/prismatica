@@ -3,7 +3,7 @@
 // (the object reference is constant; only its properties change). SUN/LT are
 // likewise objects mutated in place.
 import { INIT_ZOOM } from './constants'
-import type { BType, Building, Enemy, Pt, Pulse, ResNode, V3 } from './types'
+import type { BType, Building, Enemy, Pt, Pulse, ResNode, Shot, V3 } from './types'
 
 // --- canvas / viewport ---
 export const C = document.getElementById('c') as HTMLCanvasElement
@@ -21,8 +21,13 @@ export const S = {
   nodes: [] as ResNode[],
   enemies: [] as Enemy[],
   pulses: [] as Pulse[],
-  // generic particles: [x, y, vx, vy, life, "r,g,b"] in world space; life 1 -> 0 as it fades
-  parts: [] as [number, number, number, number, number, string][],
+  // deferred colored-orb releases (from re-entering upgrade mode): [delay-secs, sourceBuilding,
+  // colorBitmask]. Staggered so the released orbs don't all fire at once. Drained in stepSim.
+  emits: [] as [number, Building, number][],
+  shots: [] as Shot[], // flying tower projectiles (bullets & rockets; lasers are instant)
+  // generic particles: [x, y, vx, vy, life, "r,g,b", size?] in world space; life 1 -> 0 as it
+  // fades. Optional 7th elem scales the drawn glow (default 1; big for rocket explosions).
+  parts: [] as [number, number, number, number, number, string, number?][],
   resource: 0,
   rps: 0, // resources per second earned by active miners (HUD readout)
   tool: 'S' as BType,
