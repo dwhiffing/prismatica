@@ -2,7 +2,7 @@
 // (towers, miners, enemies, pulses). Pure logic — no drawing.
 import { BSPEED, BULLET_LIFE, CHARGE, ENEMIES, ESPEED, KB_BULLET, KB_DECAY, KB_ROCKET, LASER_DRAIN, LASER_OFF, LASER_ON, LINK_MAX, LINK_RANGE, MINE_RANGE, PSPEED, R, RSPEED, TOWER_RANGE } from './constants'
 import { near, rnd } from './core'
-import { S, SPAWN } from './state'
+import { S, SPAWN, SUN } from './state'
 import { drawUI } from './ui'
 import type { Building, Enemy, Pt, ResNode, Shot } from './types'
 import { ekOf, titling, toMenu } from './game'
@@ -112,8 +112,9 @@ function bounceColor(from: Building, col: number) {
 // spread evenly across that minute (nothing spawns at level 0).
 function tick() {
   for (const b of S.buildings) b.load = 0 // reset per-second link throughput counters
-  // every finished solar emits a unit into a neighbour (cycled round-robin)
-  for (const b of S.buildings) if (b.t === 'S' && !building(b)) relay(b)
+  // every finished solar emits a unit into a neighbour (cycled round-robin) — but only in
+  // daylight: solars are photovoltaic, so they go dark when the sun is below the horizon.
+  if (SUN.up > 0) for (const b of S.buildings) if (b.t === 'S' && !building(b)) relay(b)
   const level = Math.floor(S.t / 60)
   if (level !== S.threat) {
     S.threat = level // new minute -> new level; reset this level's spawn counter
