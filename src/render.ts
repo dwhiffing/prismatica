@@ -35,11 +35,29 @@ const FILTCOL = ['#ee4', '#48f', '#4f6', , '#f44']
 // PIPCOL = hex (pips + body tint); PIPRGB = "r,g,b" (for glow, which wants an rgb string).
 const PIPCOL = ['#4f6', '#f44', '#48f', '#ee4', '#4ff', '#f4f', '#fff']
 const PIPRGB = ['68,255,102', '255,68,68', '68,136,255', '238,238,68', '68,255,255', '255,68,255', '255,255,255']
-// tint an enemy by its active element affliction (fire/acid first, then the rest); none = base.
+// enemy draw scale by kind: boss huge, summoner/shielder bigger, fast small, else normal.
+const ESCALE = [1, 1, 1.4, .6, 1.3, 2.2]
+const escale = (e: Enemy) => ESCALE[e.k || 0]
+// tint an enemy's whole body (like an element effect). A live shield wins — a pale steel-cyan
+// '#bdf' distinct from the cold element's saturated cyan — else the active element affliction;
+// none = base color. The cyan shield HP-bar layer disambiguates shield from the cold element.
 const enemyTint = (e: Enemy) =>
-  e.fireT! > 0 ? '#f52' : e.acidT! > 0 ? PIPCOL[0] : e.stunT! > 0 ? PIPCOL[3]
-    : e.slowT! > 0 ? PIPCOL[4] : e.convT! > 0 ? PIPCOL[6] : e.arcT! > 0 ? PIPCOL[5]
+  e.sh! > 0 ? '#4ff'
+    : e.fireT! > 0 ? '#f52' : e.acidT! > 0 ? PIPCOL[0] : e.stunT! > 0 ? PIPCOL[3]
+    : e.slowT! > 0 ? '#34abeb' : e.convT! > 0 ? PIPCOL[6] : e.arcT! > 0 ? PIPCOL[5]
     : e.wetT! > 0 ? PIPCOL[2] : undefined
+// strength (0..1) of an enemy's body tint. Shield tint fades with remaining shield HP —
+// 25% floor as soon as sh>0, up to full at max shield — so a nearly-broken shield reads faint.
+const enemyTintA = (e: Enemy) => e.sh! > 0 ? .25 + .75 * e.sh! / e.sh0! : 1
+// blend override `o` toward base `b` by strength t (t=1 => full override) as #rrggbb, which
+// shade()/tint() re-parse. Only reached for the shield tint (ta<1), where both args are #rgb
+// short-form (element tints all pass ta=1 and skip this) — so nibbles just double.
+const mixHex = (o: string, b: string, t: number): string => {
+  const A = parseInt(o[1] + o[1] + o[2] + o[2] + o[3] + o[3], 16)
+  const B = parseInt(b[1] + b[1] + b[2] + b[2] + b[3] + b[3], 16)
+  const c = (s: number) => Math.round((B >> s & 255) + ((A >> s & 255) - (B >> s & 255)) * t)
+  return '#' + (1 << 24 | c(16) << 16 | c(8) << 8 | c(0)).toString(16).slice(1) // toString(16) reserved
+}
 
 function tp(pts: [number, number][]) { pts.forEach(([x, y], i) => i ? X.lineTo(x, y) : X.moveTo(x, y)) }
 function xv([x, y, z]: V3, sp: { scl: number; rot: V3 }) { return rotate([x * sp.scl, y * sp.scl, z * sp.scl], sp.rot) }
@@ -54,11 +72,14 @@ function entityFaces(
   override?: string, // tint EVERY spline this color (blocked-placement preview)
   swapGreen?: string, // recolor only the miner's green (#4f8) spline (starved indicator)
   yaw = 0, // whole-model rotation about Y (random per crystal so they don't all face alike)
+  ta = 1, // override strength 0..1: <1 blends the override toward each spline's own color
 ) {
   const yc = Math.cos(yaw), ys = Math.sin(yaw)
   for (const sp of ent.splines) {
     const m = meshOf(sp.geo)
-    const col = override || (swapGreen && sp.mat.col === '#4f8' ? swapGreen : sp.mat.col)
+    const col = override
+      ? (ta < 1 ? mixHex(override, sp.mat.col, ta) : override)
+      : (swapGreen && sp.mat.col === '#4f8' ? swapGreen : sp.mat.col)
     for (const f of m.faces) {
       const wv: V3[] = f.map((i) => {
         const lv = xv(m.verts[i], sp)
@@ -195,7 +216,7 @@ function addShadow(ent: Entity, gx: number, gz: number, s: number) {
 
 // outline an entity's on-screen silhouette: project every vertex to screen space,
 // convex-hull them, and stroke the hull. Used to highlight under-construction buildings.
-function entityOutline(ent: Entity, gx: number, gz: number, s: number, col: string) {
+function entityOutline(ent: Entity, gx: number, gz: number, s: number, col: string, lw = 2, alpha = 1) {
   const pts: [number, number][] = []
   for (const sp of ent.splines) {
     const m = meshOf(sp.geo)
@@ -209,13 +230,15 @@ function entityOutline(ent: Entity, gx: number, gz: number, s: number, col: stri
   const h = hull(pts)
   if (h.length < 3) return
   X.strokeStyle = col
-  X.lineWidth = 2
+  X.globalAlpha = alpha
+  X.lineWidth = lw
   X.lineJoin = 'round'
   X.beginPath()
   tp(h)
   X.closePath()
   X.stroke()
   X.lineWidth = 1
+  X.globalAlpha = 1
 }
 
 // project a ground point to screen at a given up-height (for lasers/pulses/labels)
@@ -276,9 +299,10 @@ export function render() {
     if (b.bp != null)
       chunkRing(b.x, b.y, R[b.t] + 5, BUILD[b.t], BUILD[b.t] - b.bp)
     // a built, non-upgrading tower that isn't full shows its stored power as a segmented ring
-    // (e/CHARGE): bright yellow filled, dark yellow empty. Hidden entirely once fully charged.
+    // (e/CHARGE): bright yellow filled, dark yellow empty. floor() so partial charge never
+    // rounds up to look full. Hidden only once fully charged.
     else if (b.t === 'T' && !b.up && b.e < CHARGE)
-      chunkRing(b.x, b.y, R[b.t] + 5, CHARGE, Math.round(b.e), '#fe4', '#540')
+      chunkRing(b.x, b.y, R[b.t] + 5, CHARGE, Math.floor(b.e), '#fe4', '#540')
 
   // Two levers keep the frame cheap with hundreds of entities:
   //  - viewport cull (onScreen): off-screen entities are skipped everywhere.
@@ -306,7 +330,7 @@ export function render() {
     for (const b of buildings)
       if (b.bp == null && onScreen(b)) addShadow(ENTITIES[b.ek ?? b.t], b.x, b.y, 1)
     for (const e of enemies)
-      if (onScreen(e)) addShadow(ENTITIES.E, e.x, e.y, 1)
+      if (onScreen(e)) addShadow(ENTITIES.E, e.x, e.y, escale(e))
     X.fill('nonzero') // nonzero winding: overlaps count as inside, filled uniformly
     X.globalAlpha = 1
 
@@ -325,7 +349,7 @@ export function render() {
             : b.t === 'T' ? (b.up ? '#444' : b.elem != null ? PIPCOL[b.elem] : undefined) : undefined,
           b.t === 'M' && starved(b) ? '#a4f' : undefined)
     for (const e of enemies)
-      if (onScreen(e)) entityFaces(ENTITIES.E, e.x, e.y, 1, faces, enemyTint(e))
+      if (onScreen(e)) entityFaces(ENTITIES.E, e.x, e.y, escale(e), faces, enemyTint(e), undefined, 0, enemyTintA(e))
     faces.sort((a, b) => a.d - b.d)
     for (const f of faces) fillFace(f)
     X.globalAlpha = 1 // reset after translucent (crystal) faces
@@ -475,6 +499,18 @@ export function render() {
       const [ax, ay] = g(b.x, b.y, 12)
       glow(ax, ay, PIPRGB[b.bonus], 0.7, 1.4)
     }
+  // enemy health bar: ONE bar above each enemy. Red HP fill (hp/hp0) over a dark track, with
+  // the cyan shield drawn as a LAYER ON TOP of it (sh/sh0, same bar). Hidden at full hp & no
+  // shield so undamaged normals stay clean.
+  for (const e of enemies) {
+    // show the bar if the enemy is hurt OR carries a shield (shielded units always show it).
+    if (!onScreen(e) || (e.hp >= (e.hp0 || 1) && !e.sh0)) continue
+    const w = 14 * escale(e), [cx, cy] = g(e.x, e.y, 22 * escale(e)), bx = cx - w / 2
+    X.globalAlpha = 1
+    X.fillStyle = '#400'; X.fillRect(bx, cy, w, 3)                                    // track
+    X.fillStyle = '#f44'; X.fillRect(bx, cy, w * Math.max(0, e.hp) / (e.hp0 || 1), 3) // hp
+    if (e.sh! > 0) { X.fillStyle = '#4ff'; X.fillRect(bx, cy, w * e.sh! / e.sh0!, 3) } // shield on top
+  }
   // upgrade pips: 3 slots above any upgraded OR upgrading tower. Each FILLED slot is tinted by
   // the actual color of the orb it holds (weapon / element / bonus), so red energy reads red.
   // Mid-upgrade fills `up-1`; a completed tower (up cleared, weapon set) shows all 3. The bar
@@ -503,8 +539,9 @@ export function render() {
     glow(sx, sy, s.col, a, sc)
   }
   // generic particles: little glows fading as they fly out (mining sparks, explosions, smoke).
+  // An affliction "rise" particle (q[7]) floats UP as it fades — its draw height climbs with age.
   for (const q of S.parts) {
-    const [sx, sy] = g(q[0], q[1], 6)
+    const [sx, sy] = g(q[0], q[1], q[7] ? 6 + (1 - q[4]) * 24 : 6)
     glow(sx, sy, q[5], q[4], 0.5 * (q[6] || 1)) // 7th elem scales size (big rocket explosions)
   }
   X.globalAlpha = 1

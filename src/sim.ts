@@ -105,10 +105,24 @@ function tick() {
   if (!titling) drawUI()
 }
 
-export function spawnEnemy() {
-  const a = rnd() * Math.PI * 2
-  const r = 500
-  S.enemies.push({ x: SPAWN.x + Math.cos(a) * r, y: SPAWN.y + Math.sin(a) * r, hp: 6, hp0: 6 })
+// per-kind base stats: [hp, shield, speed]. kind 0 normal .. 5 boss. A shield enemy carries
+// half its total as shield; a shielder has lots of hp and no shield; fast is frail+quick;
+// summoner/boss are tanky+slow.
+const EKIND: [number, number, number][] = [
+  [6, 0, ESPEED],       // 0 normal
+  [6, 6, ESPEED],       // 1 shield (normal hp, plus a shield on top)
+  [20, 0, ESPEED * .4], // 2 shielder (no shield of its own, high hp; slow)
+  [2, 0, ESPEED * 2.2], // 3 fast (swarm)
+  [16, 0, ESPEED * .5], // 4 summoner (hangs back)
+  [80, 0, ESPEED * .5], // 5 boss (huge hp, slow, pauses — see movement)
+]
+// spawn an enemy of kind `k` at a random point on the ring (or at x,y if given, e.g. summons).
+export function spawnEnemy(k = 0, x?: number, y?: number) {
+  const [hp, sh, spd] = EKIND[k]
+  if (x == null) { const a = rnd() * Math.PI * 2; x = SPAWN.x + Math.cos(a) * 500; y = SPAWN.y + Math.sin(a) * 500 }
+  const swarm = k === 3 ? 4 : 1 // fast enemies come in swarms
+  for (let i = 0; i < swarm; i++)
+    S.enemies.push({ x: x + (i ? (rnd() - .5) * 30 : 0), y: y! + (i ? (rnd() - .5) * 30 : 0), hp, hp0: hp, sh, sh0: sh, k, spd })
 }
 
 // dev: fire a colored energy pulse from (x,y) toward a building that accepts this color.
@@ -252,6 +266,7 @@ function rocket(b: Building, e: Enemy, dmg: number, kb: number, big: boolean, co
 // not an instant teleport). kb is the intended total slide distance; with the KB_DECAY
 // exponential falloff, an initial velocity of kb*KB_DECAY integrates to ~that distance.
 function knockback(e: Enemy, fx: number, fy: number, kb: number) {
+  if (e.k === 5) kb *= .15 // boss: heavy knockback resistance (barely shoved)
   const dx = e.x - fx, dy = e.y - fy, d = Math.hypot(dx, dy) || 1
   e.kx = (e.kx || 0) + (dx / d) * kb * KB_DECAY
   e.ky = (e.ky || 0) + (dy / d) * kb * KB_DECAY
@@ -261,8 +276,15 @@ const AFFLICT = 3 // base affliction duration (seconds) an element status lasts 
 // deal `dmg` to enemy `e` and apply the tower's element (0..6, or undefined = no element).
 // water (2) amplifies damage; the rest set a status timer. arcane (5) shares the damage to
 // nearby arcane-affected enemies; lightning (3) restuns on hit; fire (1) kills at 10% hp.
-function hurt(e: Enemy, dmg: number, elem?: number) {
+function hurt(e: Enemy, dmg: number, elem?: number, laser?: boolean) {
   if (e.wetT) dmg *= 1.1 // water: +10% damage taken
+  // shield: absorbs the WHOLE hit before hp — resistant to bullets (×0.25), weak to lasers
+  // (×1.5). Damage does NOT overflow to hp on the hit that breaks it; elements are blocked
+  // while any shield remains.
+  if (e.sh && e.sh > 0) {
+    e.sh = Math.max(0, e.sh - dmg * (laser ? 1.5 : .25))
+    return
+  }
   e.hp -= dmg
   if (elem === 0) e.acidT = AFFLICT              // acid: damage over time (ticked in the loop)
   else if (elem === 1) e.fireT = AFFLICT         // fire: dies early + explodes (loop)
@@ -346,7 +368,7 @@ export function stepSim(dt: number) {
         if (en) {
           b.fx = en
           b.beamA = Math.min(1, (b.beamA || 0) + dt * 6) // ramp on
-          hurt(en, w.dmg * dt, b.elem)
+          hurt(en, w.dmg * dt, b.elem, true) // laser damage type (weak vs shields)
           if (cd + dt >= LASER_ON) { b.e = Math.max(0, b.e - blastCost); b.cd = -LASER_OFF * fireRateMod(b) } // blast ends: pay + cool
           else b.cd = cd + dt
         } else {
@@ -425,12 +447,30 @@ export function stepSim(dt: number) {
     if (e.fireT && e.fireT > 0) { e.fireT -= dt; if (e.hp < (e.hp0 || 6) * .1) e.hp = 0 }
     if (e.wetT) e.wetT -= dt
     if (e.arcT) e.arcT -= dt
+    // affliction ambience: while any element is active, emit occasional particles in that
+    // element's color that float up and fade (tuple's 8th slot = rise flag). First active wins.
+    const aff = e.acidT! > 0 ? 0 : e.fireT! > 0 ? 1 : e.wetT! > 0 ? 2 : e.stunT! > 0 ? 3
+      : e.slowT! > 0 ? 4 : e.arcT! > 0 ? 5 : e.convT! > 0 ? 6 : -1
+    if (aff >= 0 && rnd() < dt * 8)
+      S.parts.push([e.x + (rnd() - .5) * 8, e.y + (rnd() - .5) * 8, 0, 0, 1, ECOL[aff], .5, 1])
     if (e.stunT && e.stunT > 0) { e.stunT -= dt; continue } // lightning: frozen in place this frame
+    // SHIELDER (k=2): regenerate shields on nearby normal/shield enemies (granting one to
+    // normals, which have none) up to a shield-enemy's max (EKIND[1][1]).
+    if (e.k === 2) for (const o of S.enemies) if (o.k! < 2 && near(e, o, 40) && (o.sh || 0) < EKIND[1][1]) {
+      o.sh0 = EKIND[1][1] // give it a shield capacity so the bar/tint reads
+      o.sh = Math.min(EKIND[1][1], (o.sh || 0) + 1.5 * dt)
+    }
+    // SUMMONER (k=4): spawn a fast-enemy swarm every ~3s at its position.
+    if (e.k === 4) { e.ai = (e.ai || 0) - dt; if (e.ai <= 0) { e.ai = 3; spawnEnemy(3, e.x, e.y) } }
     if (!e.target || e.target.dead || !S.buildings.includes(e.target)) e.target = pickTarget()
     const tg = e.target
     if (!tg) continue
-    const spd = e.slowT && e.slowT > 0 ? ESPEED / 2 : ESPEED
+    let spd = (e.spd || ESPEED) * (e.slowT && e.slowT > 0 ? .5 : 1)
     if (e.slowT) e.slowT -= dt
+    // BOSS (k=5): move in bursts — advance ~1s, then pause ~1s (ai < 0 = paused phase).
+    if (e.k === 5) { e.ai = ((e.ai || 0) + dt) % 2; if (e.ai > 1) spd = 0 }
+    // SUMMONER (k=4): hangs back — stops advancing once fairly close to its target.
+    if (e.k === 4 && Math.hypot(tg.x - e.x, tg.y - e.y) < 200) spd = 0
     // converted (white): flee the target instead of advancing toward it.
     const dir = e.convT && e.convT > 0 ? -1 : 1
     if (e.convT) e.convT -= dt

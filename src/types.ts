@@ -50,6 +50,11 @@ export interface ResNode extends Pt {
 export interface Enemy extends Pt {
   hp: number
   hp0?: number // spawn hp (max), for fire's "dies at 10%" threshold
+  k?: number // kind: 0 normal, 1 shield, 2 shielder, 3 fast, 4 summoner, 5 boss
+  sh?: number // current shield hp (shield/shielded enemies); absorbs damage before hp
+  sh0?: number // max shield (for regen cap by a shielder)
+  spd?: number // per-kind movement speed override (fast=high, boss/summoner=low)
+  ai?: number // per-kind AI timer (summoner: spawn cooldown; boss: move/pause phase)
   target?: Building | null
   kx?: number // knockback velocity (world units/sec); decays each frame — a shove, not a teleport
   ky?: number

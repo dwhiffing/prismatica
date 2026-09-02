@@ -378,8 +378,9 @@ if (DEVTOOLS) {
   addEventListener('keydown', (ev: KeyboardEvent) => {
     if (!S.mouse) return
     const w = unproject(S.mouse.x, S.mouse.y)
-    // 'x': spawn an enemy at the cursor
-    if (ev.key === 'x') S.enemies.push({ x: w.x, y: w.y, hp: 10, hp0: 10 })
+    // 'z x c v b n': spawn enemy kind 0..5 (normal/shield/shielder/fast/summoner/boss) at cursor
+    const ei = 'zxcvbn'.indexOf(ev.key)
+    if (ei >= 0) spawnEnemy(ei, w.x, w.y)
     // 'q w e r t y u': fire a red/green/blue/cyan/yellow/magenta/white energy pulse at the
     // cursor. It flies to the nearest thing in range that accepts the color, else fizzles.
     const ki = 'qwertyu'.indexOf(ev.key)

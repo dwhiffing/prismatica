@@ -14,7 +14,7 @@ const RESERVE = new RegExp('^(' + [
   'length', 'min', 'max', 'abs', 'sin', 'cos', 'tan', 'atan2', 'sqrt', 'hypot', 'sign', 'floor',
   'round', 'ceil', 'PI', 'SQRT2', 'random', 'from', 'push', 'pop', 'map', 'filter',
   'some', 'find', 'sort', 'includes', 'slice', 'indexOf', 'set',
-  'forEach', 'split', 'join', 'concat', 'reverse', 'get', // Array/String/WeakMap methods
+  'forEach', 'split', 'join', 'concat', 'reverse', 'get', 'toString', // Array/String/WeakMap methods
   // canvas 2d context + gradients/patterns
   'fillStyle', 'strokeStyle', 'lineWidth', 'globalAlpha', 'globalCompositeOperation',
   'beginPath', 'closePath', 'moveTo', 'lineTo', 'stroke', 'fill', 'fillRect',
