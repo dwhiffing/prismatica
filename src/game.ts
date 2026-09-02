@@ -8,7 +8,7 @@ import {
   R,
   TOWER_RANGE,
 } from './constants'
-import { canPlace, near, nearest, rnd, setSeed, unproject } from './core'
+import { canPlace, nearest, rnd, setSeed, unproject } from './core'
 import { computeSun } from './lighting'
 import { render } from './render'
 import { inMinimap, mmToWorld } from './minimap'
@@ -88,6 +88,9 @@ const mkB = (t: BType, x: number, y: number, bp?: number): Building => ({ t, x, 
 const lineTool = () => S.mode === 'build' && (S.tool === 'L' || S.tool === 'T')
 
 const VARIANTS: [EType, number][] = [['rockSmall', NODE_AMT * 0.35], ['rockMedium', NODE_AMT * 0.65], ['rockMedium', NODE_AMT * 0.65], ['rockLarge', NODE_AMT]]
+const CRYSTALS = 400 // color crystals scattered across the map at world reset
+// crystal model for a given remaining size (3=big N, 2=med N2, 1=small N3)
+export const ekOf = (csz: number): EType => (['N3', 'N2', 'N'] as EType[])[csz - 1]
 // sunflower (phyllotaxis) patch layout: patch i sits at angle i·GOLDEN and radius
 // spacing·i^0.7. The i^0.7 makes successive rings spread apart with distance, so clusters
 // thin out the further you get from spawn. Golden-angle rotation never self-overlaps, so
@@ -114,11 +117,17 @@ function reset() {
   S.buildings = [mkB('S', SPAWN.x - 35, SPAWN.y), mkB('S', SPAWN.x + 35, SPAWN.y),
     ...[0, 1, 2].map((i) => { const a = -Math.PI / 2 + (i * Math.PI * 2) / 3; return mkB('L', SPAWN.x + Math.cos(a) * 22, SPAWN.y + Math.sin(a) * 22) })]
   S.nodes = []
-  // spawn RGB color crystals equidistant from spawn; they act as world-fixed color links
-  for (let i = 0; i < 3; i++) {
-    const a = -Math.PI / 2 + (i * Math.PI * 2) / 3
-    const crystalCol = [4, 2, 1][i], ek = (['crystalR', 'crystalG', 'crystalB'] as EType[])[i]
-    S.buildings.push({ ...mkB('L', SPAWN.x + Math.cos(a) * 195, SPAWN.y + Math.sin(a) * 195), crystalCol, ek })
+  // lay color crystals on their own golden-angle spiral (like the rock field): each step turns
+  // ~137.5°, so the layout is even and never clusters — and cycling color by i%3 means the three
+  // colors interleave, keeping same-color crystals far apart. Radius grows with i, and SIZE grows
+  // with distance: size 1 near spawn, 2 mid-field, 3 out at the rim. Each recolors up to `csz`
+  // energy units, shrinking a step per use, then depletes away.
+  const wr = worldRadius()
+  for (let i = 0; i < CRYSTALS; i++) {
+    const rad = 160 + (wr - 160) * (i / CRYSTALS) ** 0.85, a = i * GOLDEN
+    const csz = Math.min(3, 1 + (rad / wr * 3 | 0)) // 1 near spawn -> 3 at the rim
+    S.buildings.push({ ...mkB('L', SPAWN.x + Math.cos(a) * rad, SPAWN.y + Math.sin(a) * rad),
+      crystalCol: [4, 2, 1][i % 3], csz, ek: ekOf(csz) })
   }
   // lay the sunflower: patch 0 at spawn, each next one rotated by GOLDEN and pushed out
   // by spacing·i^0.7 (rings spread with distance → clusters thin out further from spawn).
@@ -165,6 +174,10 @@ let downX = 0,
   mmDrag = false
 let chainSrc: Building | null = null // link/tower the current drag started on (drag-to-chain)
 let lastBuilt: { x: number; y: number } | null = null // last spot a drag-line building was placed
+// pressing on an ALREADY-SELECTED tower arms this hold-timer: a long press (500ms) ejects the
+// tower's spec/energy; a quick release before it fires instead cycles the color order. A drag
+// cancels it (that's a pan/chain, not a press). Set in onpointerdown, cleared on move/up.
+let towerHold: ReturnType<typeof setTimeout> | null = null
 // place one building of the current tool if affordable and not blocked; true if placed
 const tryBuild = (x: number, y: number) => {
   if (S.resource < COST[S.tool] || !canPlace(S.tool, x, y)) return false
@@ -196,6 +209,11 @@ C.onpointerdown = (e: PointerEvent) => {
   // (instead of panning) — see onpointerup.
   const dp = unproject(downX, downY)
   chainSrc = S.mode === 'select' ? nearest(dp, (b) => b.t === 'L', 12 * 12) : null
+  // press on the already-selected tower: arm the long-press eject (a quick release cycles instead)
+  if (S.mode === 'select' && S.sel && S.sel.t === 'T' && S.sel.bp == null && nearest(dp, (b) => b === S.sel, 12 * 12)) {
+    const tgt = S.sel
+    towerHold = setTimeout(() => { towerHold = null; ejectSpec(tgt); drawUI() }, 500)
+  }
   // build-mode L/T: drop the first building of the line here; onpointermove adds more,
   // one per max-range step, as the cursor moves away.
   lastBuilt = null
@@ -220,7 +238,7 @@ C.onpointermove = (e: PointerEvent) => {
   }
   const dx = mx(e) - downX,
     dy = my(e) - downY
-  if (!didDrag && dx * dx + dy * dy > 25) didDrag = true
+  if (!didDrag && dx * dx + dy * dy > 25) { didDrag = true; if (towerHold != null) { clearTimeout(towerHold); towerHold = null } } // a drag is a pan/chain, not a long-press
   // build-mode L/T drag: place a new building every time the cursor gets a full max-range
   // step past the last one placed (loop in case it jumped several steps in one frame).
   if (didDrag && lineTool()) {
@@ -283,19 +301,17 @@ C.onpointerup = (e: PointerEvent) => {
     if (!e.shiftKey) S.mode = 'select' // hold shift to keep placing
     drawUI()
   } else {
+    // a pending tower-hold means this press was a quick CLICK on the already-selected tower
+    // (the long-press eject never fired) -> cycle its color order. Consume the click either way.
+    if (towerHold != null) {
+      clearTimeout(towerHold); towerHold = null
+      if (S.sel && S.sel.t === 'T') { cycleSpec(S.sel); drawUI() }
+      return
+    }
     const hit = nearest(p, () => true, 12 * 12)
-    // clicking an ALREADY-SELECTED building acts on it:
-    if (hit && hit === S.sel) {
-      // under construction -> RUSH it: reroute every in-range link to feed it (sim clears
-      // these when it completes).
-      if (hit.bp != null) {
-        hit.rush = true
-        for (const b of S.buildings)
-          if (b.t === 'L' && b !== hit && near(b, hit, LINK_RANGE)) b.route = hit
-      // a finished link -> cycle its color filter: yellow(any) -> R -> G -> B -> yellow
-      } else if (hit.t === 'L' && !hit.crystalCol) {
-        hit.filt = [4, 0, 1, , 2][hit.filt || 0] // cycle any(0)->R(4)->G(2)->B(1)->any
-      }
+    // clicking an ALREADY-SELECTED finished link cycles its color filter: any->R->G->B->any.
+    if (hit && hit === S.sel && hit.bp == null && hit.t === 'L' && !hit.crystalCol) {
+      hit.filt = [4, 0, 1, , 2][hit.filt || 0] // cycle any(0)->R(4)->G(2)->B(1)->any
     }
     S.sel = hit
   }
@@ -332,21 +348,6 @@ addEventListener('keydown', (e: KeyboardEvent) => {
     S.buildings = S.buildings.filter((b) => b !== S.sel)
     S.sel = null
     drawUI()
-  }
-  // 'f' on a selected tower: HOLD (500ms) ejects its whole spec + charge; a quick TAP cycles
-  // the color order (weapon/elem/bonus) when it holds a full 3-color spec. keydown arms a
-  // hold-timer; keyup before it fires counts as a tap (see fHold below).
-  if (e.key === 'f' && !e.repeat && S.sel && S.sel.t === 'T' && S.sel.bp == null && fHold == null) {
-    const tgt = S.sel
-    fHold = setTimeout(() => { fHold = null; ejectSpec(tgt); drawUI() }, 500)
-  }
-})
-let fHold: ReturnType<typeof setTimeout> | null = null
-addEventListener('keyup', (e: KeyboardEvent) => {
-  if (e.key === 'f' && fHold != null) {
-    clearTimeout(fHold) // released before the 500ms hold fired -> it's a tap
-    fHold = null
-    if (S.sel && S.sel.t === 'T') { cycleSpec(S.sel); drawUI() }
   }
 })
 

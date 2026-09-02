@@ -39,8 +39,9 @@ export interface Building extends Pt {
   load?: number // link: energy units passed through this second (reset each tick); over
   // LINK_MAX it overloads — excess is burned and the link draws red until the next reset
   crystalCol?: number // if set: world color crystal; ORs this color bit into passing energy (4=R,2=G,1=B)
-  ek?: EType // entity model override (used by color crystals to render a crystal instead of link)
-  rush?: boolean // "rush build": in-range links were rerouted to feed this; cleared when built
+  csz?: number // color crystal size 1..3 = colorings left; each successful recolor decrements it
+  // (and steps the model N->N2->N3); at 0 the crystal is depleted and removed.
+  ek?: EType // entity model override (color crystals render a crystal model, stepped by size)
   filt?: number // link color filter: 0=any(yellow), else only energy with this bit (4=R,2=G,1=B)
   drain?: number // title menu only: energy arriving here is consumed (never forwarded/bounced)
   emit?: number // title menu only: this dot is its letter's sole energy source (see spray)

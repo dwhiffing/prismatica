@@ -5,7 +5,7 @@ import { near, rnd } from './core'
 import { S, SPAWN } from './state'
 import { drawUI } from './ui'
 import type { Building, Enemy, Pt, ResNode, Shot } from './types'
-import { titling, toMenu } from './game'
+import { ekOf, titling, toMenu } from './game'
 
 // energy color bitmask (4=R,2=G,1=B) -> upgrade index 0..6: green,red,blue,yellow,cyan,magenta,white
 const COLIDX: Record<number, number> = { 2: 0, 4: 1, 1: 2, 6: 3, 3: 4, 5: 5, 7: 6 }
@@ -88,9 +88,22 @@ export function relay(node: Building, col = 0) {
   // never relay back against an established directed connection: if o routes to us (o->node),
   // don't send energy the other way (node->o).
   const ns = S.buildings.filter((o) => o !== node && o.route !== node && accepts(o, col) && near(node, o, LINK_RANGE))
-  if (!ns.length) return
-  node.ni = ((node.ni || 0) + 1) % ns.length
-  hop(node, ns[node.ni], col)
+  if (ns.length) { node.ni = ((node.ni || 0) + 1) % ns.length; hop(node, ns[node.ni], col); return }
+  // dead end. UNCOLORED energy just stops (it's cheap fuel). COLORED energy is precious and must
+  // never be lost, so bounce it to the nearest acceptor anywhere — even back the way it came, even
+  // out of range — so it keeps circulating until something consumes it.
+  if (col) bounceColor(node, col)
+}
+// last-resort re-home for colored energy with no in-range forward target: hop it to the nearest
+// building (any range, ignoring directed-connection rules) that can still accept this color.
+function bounceColor(from: Building, col: number) {
+  let best: Building | null = null, bd = Infinity
+  for (const o of S.buildings) {
+    if (o === from) continue
+    const dd = (o.x - from.x) ** 2 + (o.y - from.y) ** 2
+    if (dd < bd && accepts(o, col)) { bd = dd; best = o }
+  }
+  if (best) hop(from, best, col) // else: no acceptor exists anywhere — nothing we can do
 }
 
 
@@ -153,18 +166,10 @@ export function devPulse(x: number, y: number, col: number) {
   if (target) hop(from, target, col)
 }
 
-// emit one released colored orb from `b`: route it to the nearest accepting link/crystal, or
-// burst it as particles if none is in range. (Called by the staggered release, see stepSim.)
+// emit one released colored orb from `b` (staggered spec eject): re-home it to the nearest
+// accepting building anywhere — colored energy is never lost, so it circulates until consumed.
 function emitOrb(b: Building, col: number) {
-  if (!S.buildings.includes(b)) return
-  let best: Building | null = null, bd = LINK_RANGE * LINK_RANGE
-  for (const o of S.buildings) {
-    if (o === b) continue
-    const dd = (o.x - b.x) ** 2 + (o.y - b.y) ** 2
-    if (dd < bd && accepts(o, col)) { bd = dd; best = o }
-  }
-  if (best) hop(b, best, col)
-  else spawnParts(b.x, b.y, 8, 60, `${col & 4 ? 255 : 60},${col & 2 ? 255 : 60},${col & 1 ? 255 : 60}`)
+  if (S.buildings.includes(b)) bounceColor(b, col)
 }
 
 // HOLD F: eject everything the tower holds and reset it to a bare peashooter. Its absorbed
@@ -183,19 +188,23 @@ export function ejectSpec(b: Building) {
   applyCols(b) // clears weapon/elem/bonus
 }
 
-// TAP F (only with a full 3-color spec): step to the next ordering that actually changes the
-// weapon/elem/bonus arrangement, re-slotting the same three colors. When colors repeat, some
-// permutations are identical to the current one — skip those. If every ordering is identical
-// (all 3 colors the same), it's a no-op (up to 5 steps then wraps back to where it started).
+// TAP F (with 2+ colors): step to the next ordering that changes the weapon/elem/bonus
+// arrangement. Colors always stay PACKED into the leading slots — with 2 colors they only ever
+// swap between weapon+elem (slot 2 stays empty), never spilling a color into bonus. A candidate
+// perm is only valid if every trailing (empty) slot maps to an empty color. Identical
+// arrangements (repeat colors) are skipped; all-same colors make it a no-op.
 export function cycleSpec(b: Building) {
-  const cs = b.cols
-  if (!cs || cs.length < 3) return
-  const key = (p: number) => { const o = PERMS[p]; return cs[o[0]] + ',' + cs[o[1]] + ',' + cs[o[2]] }
-  const cur = key(b.perm || 0)
+  const cs = b.cols, n = cs?.length || 0
+  if (n < 2) return
+  const packed = (p: number) => PERMS[p].every((src, slot) => slot < n || src >= n) // no color past slot n-1
+  const key = (p: number) => { const o = PERMS[p]; return cs![o[0]] + ',' + cs![o[1]] + ',' + cs![o[2]] }
+  const start = b.perm || 0, cur = key(start)
+  let np = start
   for (let i = 0; i < 5; i++) {
-    b.perm = ((b.perm || 0) + 1) % 6
-    if (key(b.perm) !== cur) break // found a distinct arrangement
+    np = (np + 1) % 6
+    if (packed(np) && key(np) !== cur) break // valid packing + a distinct arrangement
   }
+  b.perm = packed(np) ? np : start // no distinct packed perm found (e.g. all-same) — stay put
   applyCols(b)
 }
 
@@ -367,11 +376,7 @@ export function stepSim(dt: number) {
 
   // Construction: `bp` counts down as energy arrives (one chunk per unit). When it
   // hits 0 the building is complete — clear bp so it becomes solid and operational.
-  for (const b of S.buildings) if (b.bp === 0) {
-    b.bp = undefined
-    // a rush-built target: undo the temporary reroutes that fed it, then clear the flag
-    if (b.rush) { for (const o of S.buildings) if (o.route === b) o.route = null; b.rush = false }
-  }
+  for (const b of S.buildings) if (b.bp === 0) b.bp = undefined
 
   // ease each crystal's displayed scale toward its amt-based size (shrinks to 0)
   for (const n of S.nodes) {
@@ -618,13 +623,21 @@ export function stepSim(dt: number) {
       const inCol = p.col
       // energy in the pulse's own color, for particle bursts when it's destroyed
       const col = inCol ? `${inCol & 4 ? 255 : 60},${inCol & 2 ? 255 : 60},${inCol & 1 ? 255 : 60}` : '255,238,140'
-      // target was SOLD mid-flight (no longer in the world): the energy is lost — burst it
-      if (!S.buildings.includes(d)) { spawnParts(d.x, d.y, 8, 60, col); p.dst = null as never; continue }
+      // target was SOLD mid-flight (no longer in the world). Uncolored energy is lost (burst it);
+      // colored energy must never be lost, so re-home it to the nearest acceptor from here.
+      if (!S.buildings.includes(d)) {
+        if (inCol) bounceColor(d, inCol); else spawnParts(d.x, d.y, 8, 60, col)
+        p.dst = null as never; continue
+      }
       if (d.crystalCol != null) {
-        // color crystal: OR in the crystal's color bit (same color twice is a no-op by OR),
-        // then relay onward. Subject to the same overload cap as regular links (excess burns).
-        if ((d.load = (d.load || 0) + 1) <= LINK_MAX) relay(d, inCol | d.crystalCol)
-        else spawnParts(d.x, d.y, 8, 60, col)
+        // COLOR CRYSTAL: if it can add its color to this energy (its bit isn't already set) and
+        // it still has charge (csz>0), recolor the energy, relay it on, and spend one size — the
+        // model steps down (N->N2->N3) and the crystal is removed once drained to 0. Energy that
+        // it can't recolor (already that color, or crystal spent) just relays through unchanged.
+        const canColor = d.csz! > 0 && !(inCol & d.crystalCol)
+        relay(d, canColor ? inCol | d.crystalCol : inCol) // recolor only if it can; else pass through
+        if (canColor && --d.csz! <= 0) S.buildings = S.buildings.filter((b) => b !== d)
+        else if (canColor) d.ek = ekOf(d.csz!)
       } else if (inCol && towerRoom(d)) {
         // COLORED energy into a tower with spec room: append its color-index to the tower's
         // ordered spec and re-derive weapon/elem/bonus. The tower keeps firing throughout.
@@ -637,12 +650,12 @@ export function stepSim(dt: number) {
       // pulse was in flight — bounce the surplus onward. finished solars are never targeted
       // (canReceive excludes them), so no type check needed.
       } else if (!building(d)) {
-        // links overload: count energy passing through this second. Once a link exceeds
-        // LINK_MAX it turns red (hot) and BURNS the excess instead of relaying — a sink so
-        // energy that never lands doesn't circulate forever.
-        // over cap: BURN it (turns red) — the lost energy bursts into particles
-        if (d.t === 'L' && (d.load = (d.load || 0) + 1) > LINK_MAX) { spawnParts(d.x, d.y, 8, 60, col); continue }
-        relay(d, inCol) // carry color through regular links
+        // links overload: count energy passing through this second. Once a link exceeds LINK_MAX
+        // it turns red (hot) and BURNS excess UNCOLORED energy — a sink so stray fuel doesn't
+        // circulate forever. COLORED energy is never burned (it's precious): it always relays on,
+        // overloaded or not, so it can never be lost.
+        if (d.t === 'L' && !inCol && (d.load = (d.load || 0) + 1) > LINK_MAX) { spawnParts(d.x, d.y, 8, 60, col); continue }
+        relay(d, inCol) // carry color through regular links (relay bounces colored dead-ends)
       }
       p.dst = null as unknown as Building // handled once
     }

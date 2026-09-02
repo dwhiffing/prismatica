@@ -344,8 +344,9 @@ export function render() {
           // overloaded link flashes red; a link is tinted by its color filter (yellow=any,
           // R/G/B); a tower in upgrade mode reads dark (disabled), an upgraded tower is tinted
           // by its ELEMENT (2nd orb); other buildings keep their own color.
-          b.load! > LINK_MAX ? '#f33'
-            : b.t === 'L' && !b.crystalCol ? FILTCOL[b.filt || 0]
+          b.crystalCol != null ? (b.crystalCol === 4 ? '#f66' : b.crystalCol === 2 ? '#6f6' : '#66f')
+            : b.load! > LINK_MAX ? '#f33'
+            : b.t === 'L' ? FILTCOL[b.filt || 0]
             : b.t === 'T' ? (b.elem != null ? PIPCOL[b.elem] : undefined) : undefined,
           b.t === 'M' && starved(b) ? '#a4f' : undefined)
     for (const e of enemies)

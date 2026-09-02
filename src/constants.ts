@@ -28,9 +28,9 @@ export const R: Record<EType, number> = {
   rockLarge: 6,
   rockMedium: 5,
   rockSmall: 4,
-  crystalR: 5,
-  crystalG: 5,
-  crystalB: 5,
+  N: 6,
+  N2: 5,
+  N3: 4,
   E: 5,
 } // pick/collision radii
 export const COST: Record<BType, number> = { S: 40, L: 5, M: 15, T: 2 } // resource cost to place

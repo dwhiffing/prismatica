@@ -5,7 +5,7 @@
 //  (a lathe profile) + a material, placed by offset/rotation/scale.
 // ============================================================
 export type V3 = [number, number, number]
-export type EType = 'S' | 'L' | 'M' | 'T' | 'rockLarge' | 'rockMedium' | 'rockSmall' | 'crystalR' | 'crystalG' | 'crystalB' | 'E'
+export type EType = 'S' | 'L' | 'M' | 'T' | 'rockLarge' | 'rockMedium' | 'rockSmall' | 'N' | 'N2' | 'N3' | 'E'
 
 export interface Geo { profile: [number, number][]; seg: number }
 export interface Material { col: string; amb: number; dif: number; a?: number }
@@ -54,14 +54,21 @@ export const ENTITIES: Record<EType, Entity> = {
   rockSmall: { name: 'rock-small', splines: [
     sp([[2, 0], [2.5, 3], [0, 4]], 7, '#afb295', [0, 1, 0], [0, 0, 1.6], 1, 0.3, 0.59),
   ] },
-  crystalR: { name: 'crystal-r', splines: [
-    sp([[3.5, 0], [4.5, 14.5], [0, 21]], 5, '#ff5555', [0, 0, 0], [0, 0, 0], 1, 1, 0.5, 0.7),
+  // color crystals, biggest (size 3) to smallest (size 1). All authored in a neutral crystal
+  // blue (#99eeff) and TINTED to red/green/blue at render time by the crystal's crystalCol.
+  // A crystal's ek steps down N -> N2 -> N3 as it's drained (see sim's crystal branch).
+  N: { name: 'crystal', splines: [
+    sp([[0, 0], [3.5, 0], [4.5, 14.5], [0, 21]], 5, '#99eeff', [0, 0, 0], [0, 0, 0], 1.1),
+    sp([[0, 0], [3.5, 0], [4.5, 14.5], [0, 21]], 5, '#99eeff', [2.5, 0, 3.5], [2.1, 1.1, 2.1], 0.75),
+    sp([[0, 0], [3.5, 0], [4.5, 14.5], [0, 21]], 5, '#99eeff', [2.5, 0, -2.5], [1.8, -2, -2], 0.4),
   ] },
-  crystalG: { name: 'crystal-g', splines: [
-    sp([[3.5, 0], [4.5, 14.5], [0, 21]], 5, '#55ff55', [0, 0, 0], [0, 0, 0], 1, 1, 0.5, 0.7),
+  N2: { name: 'crystal-med', splines: [
+    sp([[0, 0], [3.5, 0], [4.5, 14.5], [0, 21]], 5, '#99eeff', [0, 0, 0], [-0.4, 0, 0.1], 0.7),
+    sp([[0, 0], [3.5, 0], [4.5, 14.5], [0, 21]], 5, '#99eeff', [-0.5, 0, 2.5], [0.3, 0, -0.1], 0.5),
   ] },
-  crystalB: { name: 'crystal-b', splines: [
-    sp([[3.5, 0], [4.5, 14.5], [0, 21]], 5, '#5555ff', [0, 0, 0], [0, 0, 0], 1, 1, 0.5, 0.7),
+  N3: { name: 'crystal-small', splines: [
+    sp([[0, 0], [3.5, 0], [4.5, 14.5], [0, 21]], 5, '#99eeff', [0, 0, 0], [0, 0, 0.2], 0.4),
+    sp([[0, 0], [3.5, 0], [4.5, 14.5], [0, 21]], 5, '#99eeff', [1.5, 0, 0], [0, 0, -0.3], 0.3),
   ] },
   E: { name: 'enemy', splines: [
     sp([[4, 12], [0, 14]], 16, '#ff243a', [0, -2, 0], [0, 0, 0], 1, 0.3, 0.59),

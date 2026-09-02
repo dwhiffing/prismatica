@@ -25,7 +25,7 @@ const RESERVE = new RegExp('^(' + [
   // canvas / dom element + window + events
   'width', 'height', 'getElementById', 'getContext', 'createElement', 'innerHTML', 'onclick', 'dataset',
   'appendChild', 'remove', 'cssText', 'body', 'opacity',
-  'target', 'style', 'clientX', 'clientY', 'button', 'key', 'repeat', 'shiftKey', 'pointerId',
+  'target', 'style', 'clientX', 'clientY', 'button', 'key', 'shiftKey', 'pointerId',
   'setPointerCapture', 'releasePointerCapture', 'preventDefault', 'deltaY',
   'onpointerdown', 'onpointermove', 'onpointerup', 'onpointerleave', 'oncontextmenu',
   'onwheel',
@@ -41,7 +41,7 @@ const RESERVE = new RegExp('^(' + [
   // must stay literal so the string-keyed lookups still resolve.
   'S', 'L', 'M', 'T', 'E', 'X', '_',
   // EType model keys (ENTITIES/R lookups via literal strings n.k / b.ek)
-  'rockLarge', 'rockMedium', 'rockSmall', 'crystalR', 'crystalG', 'crystalB',
+  'rockLarge', 'rockMedium', 'rockSmall', 'N', 'N2', 'N3',
 ].join('|') + ')$');
 
 // Bundle src/game.ts and inline it into src/index.html.
