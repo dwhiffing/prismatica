@@ -39,6 +39,10 @@ export const CHARGE = 5 // energy a miner/tower stores at full charge
 export const NODE_AMT = 250 // starting resources in a crystal node
 export const ENEMIES = true // master switch: set false to disable enemy spawns
 export const ESPEED = 10 // enemy speed px/s
+// --- waves ---
+export const WAVE1_DELAY = 60 // seconds of grace before wave 1 spawns
+export const WAVE_WIN = 50 // clear this many waves to win
+export const SPAWN_GAP = 0.6 // seconds between individual enemy spawns within a wave
 
 // --- energy routing ---
 export const PSPEED = 50 // energy pulse travel speed, world-units/sec (constant across hops)

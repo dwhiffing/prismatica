@@ -36,8 +36,11 @@ export const S = {
   sel: null as Building | null, // selected building
   chainFrom: null as Building | null, // source of an active drag-to-connect (preview line)
   mouse: null as Pt | null, // last cursor screen pos (for build preview)
-  spawnT: 0, // enemies already spawned in the current threat level
-  threat: 0, // threat level: +1 each minute; level N spawns N enemies over that minute
+  // --- waves --- first wave starts at t=WAVE1_DELAY; clear a wave to trigger the next; win at 50.
+  wave: 0, // current wave: 0 = pre-game (grace period), 1..WAVE_WIN in progress, WAVE_WIN+ = won
+  queue: [] as number[], // enemy kinds still to spawn in the current wave (drained a few/sec)
+  spawnT: 0, // spawn-pacing accumulator (seconds; spawns one queued enemy each SPAWN_GAP)
+  won: 0, // set to 1 once the final wave is cleared (drives the win banner / end)
   t: 0, // elapsed seconds
   ZOOM: INIT_ZOOM, // camera zoom (scroll wheel to change; clamped MIN_ZOOM..MAX_ZOOM)
   camX: 0,

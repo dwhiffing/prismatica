@@ -1,6 +1,6 @@
 // Simulation: energy routing, per-second tick, and the per-frame world update
 // (towers, miners, enemies, pulses). Pure logic — no drawing.
-import { BSPEED, BULLET_LIFE, CHARGE, ENEMIES, ESPEED, KB_BULLET, KB_DECAY, KB_ROCKET, LASER_DRAIN, LASER_OFF, LASER_ON, LINK_MAX, LINK_RANGE, MINE_RANGE, PSPEED, R, RSPEED, TOWER_RANGE } from './constants'
+import { BSPEED, BULLET_LIFE, CHARGE, ENEMIES, ESPEED, KB_BULLET, KB_DECAY, KB_ROCKET, LASER_DRAIN, LASER_OFF, LASER_ON, LINK_MAX, LINK_RANGE, MINE_RANGE, PSPEED, R, RSPEED, SPAWN_GAP, TOWER_RANGE, WAVE1_DELAY, WAVE_WIN } from './constants'
 import { near, rnd } from './core'
 import { S, SPAWN, SUN } from './state'
 import { drawUI } from './ui'
@@ -115,28 +115,40 @@ function bounceColor(from: Building, col: number) {
 }
 
 
-// per-second tick: emit energy, advance the threat level, spawn enemies far from spawn.
-// Threat level = minutes elapsed (0 at start). During level L, exactly L enemies spawn,
-// spread evenly across that minute (nothing spawns at level 0).
+// per-second tick: reset link counters + emit solar energy (daylight only). Wave spawning
+// runs per-frame in stepSim (see updateWaves), not here.
 function tick() {
   for (const b of S.buildings) b.load = 0 // reset per-second link throughput counters
   // every finished solar emits a unit into a neighbour (cycled round-robin) — but only in
   // daylight: solars are photovoltaic, so they go dark when the sun is below the horizon.
   if (SUN.up > 0) for (const b of S.buildings) if (b.t === 'S' && !building(b)) relay(b)
-  const level = Math.floor(S.t / 60)
-  if (level !== S.threat) {
-    S.threat = level // new minute -> new level; reset this level's spawn counter
-    S.spawnT = 0
-  }
-  if (ENEMIES && level > 0 && S.buildings.length) {
-    const into = S.t - level * 60 // seconds into the current level's minute
-    const due = Math.floor((into / 60) * level + 0.5) // enemies that should have spawned by now
-    while (S.spawnT < due) {
-      S.spawnT++
-      spawnEnemy()
-    }
-  }
   if (!titling) drawUI()
+}
+
+// WAVE MACHINE (per-frame). Grace period until WAVE1_DELAY, then wave 1 begins. Each wave's
+// roster (waveRoster) is queued and drained one enemy every SPAWN_GAP seconds; once the queue
+// is empty AND every enemy is dead, the next wave begins. Clearing wave WAVE_WIN wins the game.
+function updateWaves(dt: number) {
+  if (!ENEMIES || S.won || !S.buildings.length) return
+  if (S.wave === 0) { // grace period before the first wave
+    if (S.t >= WAVE1_DELAY) startWave(1)
+    return
+  }
+  // drain the spawn queue at a steady cadence
+  if (S.queue.length) {
+    if ((S.spawnT -= dt) <= 0) { S.spawnT = SPAWN_GAP; spawnEnemy(S.queue.pop()) }
+    return
+  }
+  // queue empty + board clear -> advance (or win after the final wave)
+  if (!S.enemies.length) {
+    if (S.wave >= WAVE_WIN) S.won = 1
+    else startWave(S.wave + 1)
+  }
+}
+function startWave(n: number) {
+  S.wave = n
+  S.queue = waveRoster(n)
+  S.spawnT = 0 // first enemy spawns right away
 }
 
 // per-kind base stats: [hp, shield, speed]. kind 0 normal .. 5 boss. A shield enemy carries
@@ -150,6 +162,23 @@ const EKIND: [number, number, number][] = [
   [16, 0, ESPEED * .5], // 4 summoner (hangs back)
   [80, 0, ESPEED * .5], // 5 boss (huge hp, slow, pauses — see movement)
 ]
+// kind, starting from wave, base count, per wave increment
+// kinds: 0 normal, 1 shield, 2 shielder, 3 fast(swarm), 4 summoner, 5 boss.
+const WAVES: [number, number, number, number][] = [
+  [0, 1, 3, .6],   // normals — the staple, always present, grows steadily
+  [3, 2, 1, .5],   // fast swarms from wave 2 (each spawns 4)
+  [1, 4, 1, .35],  // shielded from wave 4
+  [2, 6, 1, .2],   // shielders from wave 6
+  [4, 9, 1, .15],  // summoners from wave 9
+  [5, 12, 1, .1],  // bosses from wave 12 (rare, slow ramp)
+]
+// build the list of enemy kinds to spawn for wave `n` (n >= 1), from the WAVES table.
+function waveRoster(n: number): number[] {
+  const out: number[] = []
+  for (const [k, from, base, per] of WAVES)
+    if (n >= from) for (let i = (base + (n - from) * per) | 0; i-- > 0;) out.push(k)
+  return out
+}
 // spawn an enemy of kind `k` at a random point on the ring (or at x,y if given, e.g. summons).
 export function spawnEnemy(k = 0, x?: number, y?: number) {
   const [hp, sh, spd] = EKIND[k]
@@ -377,6 +406,7 @@ export function stepSim(dt: number) {
   S.t += dt
   acc += dt
   while (acc >= 1) { acc -= 1; tick() }
+  if (!titling) updateWaves(dt)
 
   // fire any staggered orb-releases whose delay has elapsed (see ejectSpec)
   for (const em of S.emits) em[0] -= dt

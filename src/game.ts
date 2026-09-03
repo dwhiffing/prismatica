@@ -107,7 +107,8 @@ function spawnPatch(cx: number, cy: number) {
 }
 
 function reset() {
-  S.enemies = []; S.pulses = []; S.parts = []; S.shots = []; S.emits = []; S.resource = 70; S.t = 0; S.spawnT = 0
+  S.enemies = []; S.pulses = []; S.parts = []; S.shots = []; S.emits = []; S.resource = 70; S.t = 0
+  S.wave = 0; S.queue = []; S.spawnT = 0; S.won = 0
   SPAWN.x = V.W / 2; SPAWN.y = V.Hh / 2; S.camX = SPAWN.x; S.camY = SPAWN.y
   LT.dayT = .35; 
   S.buildings = [mkB('S', SPAWN.x - 35, SPAWN.y), mkB('S', SPAWN.x + 35, SPAWN.y),
