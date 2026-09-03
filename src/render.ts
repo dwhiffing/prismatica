@@ -9,6 +9,7 @@ import {
   MINE_RANGE,
   R,
   REVEAL,
+  SHIELDER_RANGE,
   TOWER_RANGE,
 } from './constants'
 import { canPlace, depth, iso, unproject } from './core'
@@ -36,8 +37,12 @@ const FILTCOL = ['#ee4', '#48f', '#4f6', , '#f44']
 const PIPCOL = ['#4f6', '#f44', '#48f', '#ee4', '#4ff', '#f4f', '#fff']
 const PIPRGB = ['68,255,102', '255,68,68', '68,136,255', '238,238,68', '68,255,255', '255,68,255', '255,255,255']
 // enemy draw scale by kind: boss huge, summoner/shielder bigger, fast small, else normal.
-const ESCALE = [1, 1, 1.4, .6, 1.3, 2.2]
+const ESCALE = [.8, .8, 1.4, .6, 1.3, 1.5]
 const escale = (e: Enemy) => ESCALE[e.k || 0]
+// enemy MODEL by kind: normal(0) & shielded(1) share 'E'; shielder/fast/summoner/boss get their
+// own E2..E4. (All are clones of E for now — differentiate the model data in models.ts.)
+const EMODEL = ['E', 'E', 'E2', 'E3', 'E4', 'E'] as const
+const emodel = (e: Enemy) => ENTITIES[EMODEL[e.k || 0]]
 // tint an enemy's whole body (like an element effect). A live shield wins — a pale steel-cyan
 // '#bdf' distinct from the cold element's saturated cyan — else the active element affliction;
 // none = base color. The cyan shield HP-bar layer disambiguates shield from the cold element.
@@ -49,12 +54,15 @@ const enemyTint = (e: Enemy) =>
 // strength (0..1) of an enemy's body tint. Shield tint fades with remaining shield HP —
 // 25% floor as soon as sh>0, up to full at max shield — so a nearly-broken shield reads faint.
 const enemyTintA = (e: Enemy) => e.sh! > 0 ? .25 + .75 * e.sh! / e.sh0! : 1
+// parse #rgb OR #rrggbb to a packed 0xrrggbb int (short form's nibbles doubled).
+const hexN = (h: string) => h.length === 4
+  ? parseInt(h[1] + h[1] + h[2] + h[2] + h[3] + h[3], 16)
+  : parseInt(h.slice(1), 16)
 // blend override `o` toward base `b` by strength t (t=1 => full override) as #rrggbb, which
-// shade()/tint() re-parse. Only reached for the shield tint (ta<1), where both args are #rgb
-// short-form (element tints all pass ta=1 and skip this) — so nibbles just double.
+// shade()/tint() re-parse. Handles both hex lengths (the shield tint is #rgb, but enemy base
+// colors can be #rrggbb).
 const mixHex = (o: string, b: string, t: number): string => {
-  const A = parseInt(o[1] + o[1] + o[2] + o[2] + o[3] + o[3], 16)
-  const B = parseInt(b[1] + b[1] + b[2] + b[2] + b[3] + b[3], 16)
+  const A = hexN(o), B = hexN(b)
   const c = (s: number) => Math.round((B >> s & 255) + ((A >> s & 255) - (B >> s & 255)) * t)
   return '#' + (1 << 24 | c(16) << 16 | c(8) << 8 | c(0)).toString(16).slice(1) // toString(16) reserved
 }
@@ -298,6 +306,9 @@ export function render() {
   for (const b of buildings)
     if (b.bp != null)
       chunkRing(b.x, b.y, R[b.t] + 5, BUILD[b.t], BUILD[b.t] - b.bp)
+  // shielder enemies (kind 2): cyan ground ring marking the radius they regen shields within.
+  for (const e of enemies)
+    if (e.k === 2 && onScreen(e)) groundRing(e.x, e.y, SHIELDER_RANGE, '#4ff', 0.4, 2)
 
   // Two levers keep the frame cheap with hundreds of entities:
   //  - viewport cull (onScreen): off-screen entities are skipped everywhere.
@@ -325,7 +336,7 @@ export function render() {
     for (const b of buildings)
       if (b.bp == null && onScreen(b)) addShadow(ENTITIES[b.ek ?? b.t], b.x, b.y, 1)
     for (const e of enemies)
-      if (onScreen(e)) addShadow(ENTITIES.E, e.x, e.y, escale(e))
+      if (onScreen(e)) addShadow(ENTITIES.E, e.x, e.y, escale(e)*(e.k === 2 || e.k ===3 ? .5:1))
     X.fill('nonzero') // nonzero winding: overlaps count as inside, filled uniformly
     X.globalAlpha = 1
 
@@ -345,7 +356,8 @@ export function render() {
             : b.t === 'T' ? (b.elem != null ? PIPCOL[b.elem] : undefined) : undefined,
           b.t === 'M' && starved(b) ? '#a4f' : undefined)
     for (const e of enemies)
-      if (onScreen(e)) entityFaces(ENTITIES.E, e.x, e.y, escale(e), faces, enemyTint(e), undefined, 0, enemyTintA(e))
+      // fast enemies face their heading (e.face); all others spin (spin·t).
+      if (onScreen(e)) entityFaces(emodel(e), e.x, e.y, escale(e), faces, enemyTint(e), undefined, e.k === 3 ? e.face || 0 : (e.spin || 0) * S.t, enemyTintA(e))
     faces.sort((a, b) => a.d - b.d)
     for (const f of faces) fillFace(f)
     X.globalAlpha = 1 // reset after translucent (crystal) faces
@@ -576,7 +588,7 @@ export function render() {
     X.drawImage(FC, 0, 0)
   }
 
-  if (MINIMAP) drawMinimap()
+  if (false) drawMinimap()
   if (false) drawThreat()
 
   // one full-screen black fill for both fades: the start-transition (trans 0→1 covers the

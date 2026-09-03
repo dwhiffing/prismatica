@@ -1,6 +1,6 @@
 // Simulation: energy routing, per-second tick, and the per-frame world update
 // (towers, miners, enemies, pulses). Pure logic — no drawing.
-import { BSPEED, BULLET_LIFE, CHARGE, ENEMIES, ESPEED, KB_BULLET, KB_DECAY, KB_ROCKET, LASER_DRAIN, LASER_OFF, LASER_ON, LINK_MAX, LINK_RANGE, MINE_RANGE, PSPEED, R, RSPEED, SPAWN_GAP, TOWER_RANGE, WAVE1_DELAY, WAVE_WIN } from './constants'
+import { BSPEED, BULLET_LIFE, CHARGE, ENEMIES, ESPEED, KB_BULLET, KB_DECAY, KB_ROCKET, LASER_DRAIN, LASER_OFF, LASER_ON, LINK_MAX, LINK_RANGE, MINE_RANGE, PSPEED, R, RSPEED, SHIELDER_RANGE, SPAWN_GAP, TOWER_RANGE, WAVE1_DELAY, WAVE_WIN } from './constants'
 import { near, rnd } from './core'
 import { S, SPAWN, SUN } from './state'
 import { drawUI } from './ui'
@@ -162,6 +162,7 @@ const EKIND: [number, number, number][] = [
   [16, 0, ESPEED * .5], // 4 summoner (hangs back)
   [80, 0, ESPEED * .5], // 5 boss (huge hp, slow, pauses — see movement)
 ]
+// TODO: tweak me
 // kind, starting from wave, base count, per wave increment
 // kinds: 0 normal, 1 shield, 2 shielder, 3 fast(swarm), 4 summoner, 5 boss.
 const WAVES: [number, number, number, number][] = [
@@ -185,7 +186,8 @@ export function spawnEnemy(k = 0, x?: number, y?: number) {
   if (x == null) { const a = rnd() * Math.PI * 2; x = SPAWN.x + Math.cos(a) * 500; y = SPAWN.y + Math.sin(a) * 500 }
   const swarm = k === 3 ? 4 : 1 // fast enemies come in swarms
   for (let i = 0; i < swarm; i++)
-    S.enemies.push({ x: x + (i ? (rnd() - .5) * 30 : 0), y: y! + (i ? (rnd() - .5) * 30 : 0), hp, hp0: hp, sh, sh0: sh, k, spd })
+    S.enemies.push({ x: x + (i ? (rnd() - .5) * 30 : 0), y: y! + (i ? (rnd() - .5) * 30 : 0),
+      hp, hp0: hp, sh, sh0: sh, k, spd, spin: (k === 3 ? 0 : 1) * (rnd() < .5 ? -1 : 1) }) // random CW/CCW
 }
 
 // dev: fire a colored energy pulse from (x,y) toward a building that accepts this color.
@@ -541,7 +543,7 @@ export function stepSim(dt: number) {
     if (e.stunT && e.stunT > 0) { e.stunT -= dt; continue } // lightning: frozen in place this frame
     // SHIELDER (k=2): regenerate shields on nearby normal/shield enemies (granting one to
     // normals, which have none) up to a shield-enemy's max (EKIND[1][1]).
-    if (e.k === 2) for (const o of S.enemies) if (o.k! < 2 && near(e, o, 40) && (o.sh || 0) < EKIND[1][1]) {
+    if (e.k === 2) for (const o of S.enemies) if (o.k! < 2 && near(e, o, SHIELDER_RANGE) && (o.sh || 0) < EKIND[1][1]) {
       o.sh0 = EKIND[1][1] // give it a shield capacity so the bar/tint reads
       o.sh = Math.min(EKIND[1][1], (o.sh || 0) + 1.5 * dt)
     }
@@ -564,6 +566,14 @@ export function stepSim(dt: number) {
       d = Math.hypot(dx, dy) || 1
     e.x += (dx / d) * spd * dt * dir
     e.y += (dy / d) * spd * dt * dir
+    if (e.k === 3) {
+      // fast: ease toward the heading it's moving (turn the short way across the ±π wrap),
+      // so a direction change tweens into the new facing instead of snapping.
+      const want = Math.atan2(dy * dir, dx * dir)
+      let df = want - (e.face ?? want)
+      df -= Math.round(df / (2 * Math.PI)) * 2 * Math.PI // wrap to (-π, π]
+      e.face = (e.face ?? want) + df * Math.min(1, dt * 8) // ~8 rad/s ease
+    }
     // separation: push apart from any other enemy within the separation radius so they spread
     // out instead of stacking up. Push strength scales with overlap depth.
     for (const o of S.enemies) if (o !== e) {

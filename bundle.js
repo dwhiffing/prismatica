@@ -41,7 +41,7 @@ const RESERVE = new RegExp('^(' + [
   // must stay literal so the string-keyed lookups still resolve.
   'S', 'L', 'M', 'T', 'E', 'X', '_',
   // EType model keys (ENTITIES/R lookups via literal strings n.k / b.ek)
-  'rockLarge', 'rockMedium', 'rockSmall', 'N', 'N2', 'N3',
+  'rockLarge', 'rockMedium', 'rockSmall', 'N', 'N2', 'N3', 'E2', 'E3', 'E4', 
 ].join('|') + ')$');
 
 // Bundle src/game.ts and inline it into src/index.html.

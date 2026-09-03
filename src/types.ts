@@ -59,6 +59,8 @@ export interface Enemy extends Pt {
   sh?: number // current shield hp (shield/shielded enemies); absorbs damage before hp
   sh0?: number // max shield (for regen cap by a shielder)
   spd?: number // per-kind movement speed override (fast=high, boss/summoner=low)
+  spin?: number // body spin rate (rad/sec about Y); sign = CW/CCW, randomized per enemy at spawn
+  face?: number // fast enemies: Y-yaw pointing along their movement (instead of spinning)
   ai?: number // per-kind AI timer (summoner: spawn cooldown; boss: move/pause phase)
   target?: Building | null
   kx?: number // knockback velocity (world units/sec); decays each frame — a shove, not a teleport
