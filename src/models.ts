@@ -5,7 +5,7 @@
 //  (a lathe profile) + a material, placed by offset/rotation/scale.
 // ============================================================
 export type V3 = [number, number, number]
-export type EType = 'S' | 'L' | 'M' | 'T' | 'rockLarge' | 'rockMedium' | 'rockSmall' | 'N' | 'N2' | 'N3' | 'E' | 'E2' | 'E3' | 'E4' 
+export type EType = 'S' | 'L' | 'M' | 'T' | 'rockLarge' | 'rockMedium' | 'rockSmall' | 'N' | 'N2' | 'N3' | 'E' | 'E2' | 'E3' | 'E4'
 
 export interface Geo { profile: [number, number][]; seg: number }
 export interface Material { col: string; amb: number; dif: number; a?: number }
@@ -40,7 +40,8 @@ export const ENTITIES: Record<EType, Entity> = {
     sp([[2, 0], [1.5, 8], [0, 10]], 10, '#d1d3ca', [-3, 0, 0], [0, 0, 0], 1, 0.3, 0.59),
   ] },
   T: { name: 'tower', splines: [
-    sp([[0, 0], [6, 0], [2, 8], [2, 22], [0, 22]], 4, '#66bdff', [0, 0, 0], [0, 0, 0], 1, 0.3, 0.59),
+    sp([[2.5, 0], [0.5, 15]], 4, '#676c6f', [0, 0, 0], [0, 0, 0], 1, 0.22, 1),
+    sp([[0, 13.5], [3, 19.5], [0, 25.5]], 13, '#dce1e4', [0, 8, 0], [0, 0, 0], 0.6, 1, 1),
   ] },
   rockLarge: { name: 'rock-large', splines: [
     sp([[0, 0], [4.5, 3], [4.5, 8.5], [0, 11.5]], 6, '#afb295', [-3.5, 1, -2.5], [0.8, 0, -1], 1.15, 0.3, 0.59),

@@ -5,6 +5,10 @@ import type { BType, EType, V3 } from './types'
 // --- gameplay ranges (world units) ---
 export const LINK_RANGE = 50 // energy transfer range — same for every energy building
 export const MINE_RANGE = 30 // miner -> resource node (green ring)
+// miner cycle: fire the laser for MINE_ON seconds, then MINE_OFF recharge. The extraction rate
+// during firing is scaled so the FULL cycle averages exactly 1 resource/sec (see the miner loop).
+export const MINE_ON = 2
+export const MINE_OFF = 0.5
 export const TOWER_RANGE = 112 // tower -> enemy base range (red ring). was 150, -25%
 // tower weapon tuning (wep: 0=laser, 1=bullet, 2=rocket)
 export const BSPEED = 240 // bullet travel speed (world units/sec)
@@ -24,7 +28,7 @@ export const R: Record<EType, number> = {
   S: 10,
   L: 4,
   M: 5,
-  T: 6,
+  T: 3,
   rockLarge: 6,
   rockMedium: 5,
   rockSmall: 4,
@@ -54,10 +58,10 @@ export const ISO = 0.7 // vertical squash toward 1 = more overhead (0.5 = 2:1 di
 export const YSCALE = 0.8 // height exaggeration on screen
 // scroll-wheel zoom: starting level and the range it clamps to
 export const INIT_ZOOM = 3
-export const MIN_ZOOM = .2
+export const MIN_ZOOM = .5
 export const MAX_ZOOM = 3
 // below this zoom, entities draw as flat dots (no 3D mesh / shadows) for performance
-export const LOD_ZOOM = .5
+export const LOD_ZOOM = 1
 // fog of war: world-space radius each building reveals through the darkness
 export const REVEAL = 180
 

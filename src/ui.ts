@@ -16,7 +16,9 @@ export function drawUI() {
       ([k, n]) =>
         `<b class="${S.mode === 'build' && S.tool === k ? 'a' : ''}" data-t="${k}">${n} $${COST[k]}</b>`,
     ).join('') +
-    `<b data-t="_">Res:${S.resource | 0} (+${S.rps | 0}/s)</b>` +
+    // sell toggle: highlighted (class 'a') while sell mode is active
+    `<b class="${S.mode === 'sell' ? 'a' : ''}" data-t="d">Sell</b>` +
+    `<b data-t="_">Res:${S.resource | 0} (+${Math.ceil(S.rps)}/s)</b>` +
     // wave readout: a countdown until wave 1, then "Wave N/WIN", then a win banner.
     `<b data-t="_">${S.won ? 'YOU WIN!' : S.wave ? `Wave ${S.wave}/${WAVE_WIN}` : `Wave 1 in ${Math.ceil(WAVE1_DELAY - S.t)}s`}</b>`
 }
@@ -24,7 +26,8 @@ export function drawUI() {
 H.onclick = (e: MouseEvent) => {
   const k = (e.target as HTMLElement).dataset.t
   if (!k || k === '_') return
-  if (S.mode === 'build' && S.tool === k) S.mode = 'select' // toggle off
+  if (k === 'd') S.mode = S.mode === 'sell' ? 'select' : 'sell' // toggle sell mode
+  else if (S.mode === 'build' && S.tool === k) S.mode = 'select' // toggle off
   else {
     S.tool = k as BType
     S.mode = 'build'

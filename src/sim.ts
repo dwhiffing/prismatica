@@ -1,11 +1,11 @@
 // Simulation: energy routing, per-second tick, and the per-frame world update
 // (towers, miners, enemies, pulses). Pure logic — no drawing.
-import { BSPEED, BULLET_LIFE, CHARGE, ENEMIES, ESPEED, KB_BULLET, KB_DECAY, KB_ROCKET, LASER_DRAIN, LASER_OFF, LASER_ON, LINK_MAX, LINK_RANGE, MINE_RANGE, PSPEED, R, RSPEED, SHIELDER_RANGE, SPAWN_GAP, TOWER_RANGE, WAVE1_DELAY, WAVE_WIN } from './constants'
+import { BSPEED, BULLET_LIFE, CHARGE, ENEMIES, ESPEED, KB_BULLET, KB_DECAY, KB_ROCKET, LASER_DRAIN, LASER_OFF, LASER_ON, LINK_MAX, LINK_RANGE, MINE_ON, MINE_OFF, MINE_RANGE, PSPEED, R, RSPEED, SHIELDER_RANGE, SPAWN_GAP, TOWER_RANGE, WAVE1_DELAY, WAVE_WIN } from './constants'
 import { near, rnd } from './core'
 import { S, SPAWN, SUN } from './state'
 import { drawUI } from './ui'
 import type { Building, Enemy, Pt, ResNode, Shot } from './types'
-import { ekOf, titling } from './game'
+import { ekOf, isMenu } from './game'
 
 // energy color bitmask (4=R,2=G,1=B) -> upgrade index 0..6: green,red,blue,yellow,cyan,magenta,white
 const COLIDX: Record<number, number> = { 2: 0, 4: 1, 1: 2, 6: 3, 3: 4, 5: 5, 7: 6 }
@@ -61,14 +61,16 @@ function killDead() {
   S.enemies = S.enemies.filter((e) => e.hp > 0)
 }
 
-// spawn a pulse from `from` to `to`, carrying an energy color.
-function hop(from: Pt, to: Building, col = 0) {
+// spawn a pulse from `from` to `to`, carrying an energy color. `avoid` (a building the next relay
+// must NOT deliver back to) rides along one hop — used to push just-ejected energy away.
+function hop(from: Pt, to: Building, col = 0, avoid?: Building) {
   const len = Math.hypot(to.x - from.x, to.y - from.y)
-  S.pulses.push({ x: from.x, y: from.y, tx: to.x, ty: to.y, p: 0, len, dst: to, col })
+  S.pulses.push({ x: from.x, y: from.y, tx: to.x, ty: to.y, p: 0, len, dst: to, col, avoid })
 }
 
-// does a tower still have room to absorb a colored energy unit (fewer than 3 specced)?
-const towerRoom = (o: Building) => o.t === 'T' && (o.cols?.length || 0) < 3
+// does a tower still have room to absorb a colored energy unit (fewer than 3 specced)? Must be
+// FINISHED — an under-construction tower can't take colors (it still owes uncolored build energy).
+const towerRoom = (o: Building) => o.t === 'T' && !building(o) && (o.cols?.length || 0) < 3
 // can building `o` receive energy of color `col`? A link forwards (or builds while under
 // construction). COLORED energy is only ever CONSUMED by a tower with spec room — and it takes
 // it regardless of firing charge, so a fully-charged tower still upgrades. UNCOLORED energy
@@ -78,40 +80,44 @@ const towerRoom = (o: Building) => o.t === 'T' && (o.cols?.length || 0) < 3
 const accepts = (o: Building, col: number) =>
   (!o.filt || col & o.filt) &&
   (col ? o.t === 'L' || towerRoom(o) : o.t === 'L' || wants(o))
-// relay a unit onward FROM `node`, preserving its energy color.
-export function relay(node: Building, col = 0) {
+// relay a unit onward FROM `node`, preserving its energy color. `avoid` (if given) is excluded
+// from every candidate — used so just-ejected energy at its first link never routes back to the
+// tower that released it.
+export function relay(node: Building, col = 0, avoid?: Building) {
   if (node.drain) return // title drain node: energy arrives and is consumed, never forwarded
+  const ok = (o: Building) => o !== node && o !== avoid && accepts(o, col) && near(node, o, LINK_RANGE)
   // PRIORITY: an in-range consumer that actually NEEDS this unit (under construction, or a
   // miner/tower below charge — anything non-link that accepts + keeps it) wins over the forced
   // route. A `route` steers surplus energy, but a building waiting to be built or powered should
   // never be starved just because this link is aimed elsewhere.
-  const needy = S.buildings.filter((o) => o !== node && o.t !== 'L' && accepts(o, col) && near(node, o, LINK_RANGE))
+  const needy = S.buildings.filter((o) => o.t !== 'L' && ok(o))
   if (needy.length) { node.ni = ((node.ni || 0) + 1) % needy.length; hop(node, needy[node.ni], col); return }
-  // forced route next, as long as the target is alive, in range, and can receive
+  // forced route next, as long as the target is alive, in range, can receive, and isn't avoided
   const rt = node.route
-  if (rt && S.buildings.includes(rt) && accepts(rt, col) && near(node, rt, LINK_RANGE)) {
+  if (rt && rt !== avoid && S.buildings.includes(rt) && accepts(rt, col) && near(node, rt, LINK_RANGE)) {
     hop(node, rt, col)
     return
   }
   // never relay back against an established directed connection: if o routes to us (o->node),
   // don't send energy the other way (node->o).
-  const ns = S.buildings.filter((o) => o !== node && o.route !== node && accepts(o, col) && near(node, o, LINK_RANGE))
+  const ns = S.buildings.filter((o) => o.route !== node && ok(o))
   if (ns.length) { node.ni = ((node.ni || 0) + 1) % ns.length; hop(node, ns[node.ni], col); return }
   // dead end. UNCOLORED energy just stops (it's cheap fuel). COLORED energy is precious and must
   // never be lost, so bounce it to the nearest acceptor anywhere — even back the way it came, even
   // out of range — so it keeps circulating until something consumes it.
-  if (col) bounceColor(node, col)
+  if (col) bounceColor(node, col, avoid)
 }
 // last-resort re-home for colored energy with no in-range forward target: hop it to the nearest
 // building (any range, ignoring directed-connection rules) that can still accept this color.
-function bounceColor(from: Building, col: number) {
+// `avoid` is excluded (and rides one more hop, so the first LINK the orb reaches sends it away).
+function bounceColor(from: Building, col: number, avoid?: Building) {
   let best: Building | null = null, bd = Infinity
   for (const o of S.buildings) {
-    if (o === from) continue
+    if (o === from || o === avoid) continue
     const dd = (o.x - from.x) ** 2 + (o.y - from.y) ** 2
     if (dd < bd && accepts(o, col)) { bd = dd; best = o }
   }
-  if (best) hop(from, best, col) // else: no acceptor exists anywhere — nothing we can do
+  if (best) hop(from, best, col, avoid) // else: no acceptor exists anywhere — nothing we can do
 }
 
 
@@ -122,7 +128,7 @@ function tick() {
   // every finished solar emits a unit into a neighbour (cycled round-robin) — but only in
   // daylight: solars are photovoltaic, so they go dark when the sun is below the horizon.
   if (SUN.up > 0) for (const b of S.buildings) if (b.t === 'S' && !building(b)) relay(b)
-  if (!titling) drawUI()
+  if (!isMenu) drawUI()
 }
 
 // WAVE MACHINE (per-frame). Grace period until WAVE1_DELAY, then wave 1 begins. Each wave's
@@ -206,10 +212,11 @@ export function devPulse(x: number, y: number, col: number) {
   if (target) hop(from, target, col)
 }
 
-// emit one released colored orb from `b` (staggered spec eject): re-home it to the nearest
-// accepting building anywhere — colored energy is never lost, so it circulates until consumed.
+// emit one released colored orb from `b` (staggered spec eject): re-home it to the nearest OTHER
+// accepting building, and mark `b` as avoided so the first link it reaches routes it AWAY from
+// the tower rather than straight back in. Colored energy is never lost — it circulates.
 function emitOrb(b: Building, col: number) {
-  if (S.buildings.includes(b)) bounceColor(b, col)
+  if (S.buildings.includes(b)) bounceColor(b, col, b)
 }
 
 // HOLD F: eject everything the tower holds and reset it to a bare peashooter. Its absorbed
@@ -357,6 +364,7 @@ const AFFLICT = 3 // base affliction duration (seconds) an element status lasts 
 // water (2) amplifies damage; the rest set a status timer. arcane (5) shares the damage to
 // nearby arcane-affected enemies; lightning (3) restuns on hit; fire (1) kills at 10% hp.
 function hurt(e: Enemy, dmg: number, elem?: number, laser?: boolean) {
+  e.hurtT = .5 // just damaged -> immune to shielder shield-regen for 500ms
   if (e.wetT) dmg *= 1.1 // water: +10% damage taken
   // shield: absorbs the WHOLE hit before hp — resistant to bullets (×0.25), weak to lasers
   // (×1.5). Damage does NOT overflow to hp on the hit that breaks it; elements are blocked
@@ -408,7 +416,7 @@ export function stepSim(dt: number) {
   S.t += dt
   acc += dt
   while (acc >= 1) { acc -= 1; tick() }
-  if (!titling) updateWaves(dt)
+  if (!isMenu) updateWaves(dt)
 
   // fire any staggered orb-releases whose delay has elapsed (see ejectSpec)
   for (const em of S.emits) em[0] -= dt
@@ -479,27 +487,29 @@ export function stepSim(dt: number) {
     if (b.fxt && b.fxt > 0) b.fxt -= dt
   }
 
-  // miners: 1s mine (earning 1 resource/sec, granted continuously) then 0.5s recharge;
-  // 1 energy = 2 shots
-  S.rps = 0 // resources/sec from all currently-mining miners (for the HUD)
+  // miners: fire the laser for MINE_ON seconds, then MINE_OFF recharge; 1 energy = 2 shots.
+  // The extraction rate DURING firing is (MINE_ON+MINE_OFF)/MINE_ON per sec, so a full cycle
+  // averages exactly 1 resource/sec regardless of how long the beam fires.
+  const MRATE = (MINE_ON + MINE_OFF) / MINE_ON
+  let mining = 0 // miners actively earning THIS frame (instantaneous rate, flickers as they cycle)
   for (const b of S.buildings) {
     if (b.t !== 'M' || building(b)) continue // skip non-miners and those under construction
     if (b.mn) {
-      // accrue 1 resource/sec to the player, but drain the crystal 3x faster so veins
-      // run out 3x sooner (income stays the same; resources are scarcer)
-      const take = Math.min(b.mn.amt / 3, dt)
+      // accrue at MRATE resource/sec while firing (cycle-averages to 1/sec), but drain the crystal
+      // 3x faster so veins run out 3x sooner (income stays the same; resources are scarcer)
+      const take = Math.min(b.mn.amt / 3, MRATE * dt)
       b.mn.amt -= take * 3
       S.resource += take
-      S.rps += 1 // this miner is actively earning 1/sec this frame
+      mining += MRATE // this miner earns MRATE/sec this frame (averages 1/sec over the cycle)
       const mp = (b.mp || 0) + dt
       b.mp = mp
       // spawn mining sparks off the crystal, but ONLY while the beam is near full (mp in
       // the middle of the cut). Spawning during the fade-out tail would birth particles
       // that then outlive the vanished beam — the "burst after the beam is gone".
-      if (mp > 0.15 && mp < 0.7 && rnd() < dt * 30) spawnParts(b.mn.x, b.mn.y, 1, 50, '255,238,140')
-      if (mp >= 1) {
+      if (mp > 0.15 && mp < MINE_ON - .3 && rnd() < dt * 30) spawnParts(b.mn.x, b.mn.y, 1, 50, '255,238,140')
+      if (mp >= MINE_ON) {
         b.mn = null
-        b.mp = 0.5
+        b.mp = MINE_OFF
       }
     } else {
       b.mp = (b.mp || 0) - dt
@@ -517,6 +527,9 @@ export function stepSim(dt: number) {
       }
     }
   }
+  // HUD income: smooth the flickering per-frame miner count toward a ~5s rolling average so the
+  // "+N/s" readout is steady instead of jumping as miners cycle mining<->recharge.
+  S.rps += (mining - S.rps) * Math.min(1, dt / 5)
   killDead()
 
   // enemies home in on a target building, destroy on contact, then repick. A slowed enemy
@@ -528,6 +541,7 @@ export function stepSim(dt: number) {
       const decay = Math.max(0, 1 - dt * KB_DECAY)
       e.kx = (e.kx || 0) * decay; e.ky = (e.ky || 0) * decay
     }
+    if (e.hurtT! > 0) e.hurtT! -= dt // recently-damaged shield-regen immunity timer
     // element status ticks: decay every timer; acid deals damage over time; fire makes the
     // enemy die once below 10% hp (killDead then explodes it).
     if (e.acidT && e.acidT > 0) { e.hp -= 2 * dt; e.acidT -= dt }
@@ -543,7 +557,7 @@ export function stepSim(dt: number) {
     if (e.stunT && e.stunT > 0) { e.stunT -= dt; continue } // lightning: frozen in place this frame
     // SHIELDER (k=2): regenerate shields on nearby normal/shield enemies (granting one to
     // normals, which have none) up to a shield-enemy's max (EKIND[1][1]).
-    if (e.k === 2) for (const o of S.enemies) if (o.k! < 2 && near(e, o, SHIELDER_RANGE) && (o.sh || 0) < EKIND[1][1]) {
+    if (e.k === 2) for (const o of S.enemies) if (o.k! < 2 && !(o.hurtT! > 0) && near(e, o, SHIELDER_RANGE) && (o.sh || 0) < EKIND[1][1]) {
       o.sh0 = EKIND[1][1] // give it a shield capacity so the bar/tint reads
       o.sh = Math.min(EKIND[1][1], (o.sh || 0) + 1.5 * dt)
     }
@@ -689,7 +703,7 @@ export function stepSim(dt: number) {
         // model steps down (N->N2->N3) and the crystal is removed once drained to 0. Energy that
         // it can't recolor (already that color, or crystal spent) just relays through unchanged.
         const canColor = d.csz! > 0 && !(inCol & d.crystalCol)
-        relay(d, canColor ? inCol | d.crystalCol : inCol) // recolor only if it can; else pass through
+        relay(d, canColor ? inCol | d.crystalCol : inCol, p.avoid) // recolor only if it can; else pass through
         if (canColor && --d.csz! <= 0) S.buildings = S.buildings.filter((b) => b !== d)
         else if (canColor) d.ek = ekOf(d.csz!)
       } else if (inCol && towerRoom(d)) {
@@ -709,7 +723,7 @@ export function stepSim(dt: number) {
         // circulate forever. COLORED energy is never burned (it's precious): it always relays on,
         // overloaded or not, so it can never be lost.
         if (d.t === 'L' && !inCol && (d.load = (d.load || 0) + 1) > LINK_MAX) { spawnParts(d.x, d.y, 8, 60, col); continue }
-        relay(d, inCol) // carry color through regular links (relay bounces colored dead-ends)
+        relay(d, inCol, p.avoid) // carry color through regular links; avoid pushes ejected energy on
       }
       p.dst = null as unknown as Building // handled once
     }

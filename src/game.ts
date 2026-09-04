@@ -31,7 +31,7 @@ renderMusic()
 // on the 3×5 grid). A link is placed at every cell used; consecutive cells in a stroke are wired
 // (route) so energy traces the drawn stroke. This one blob replaces the old FONT+WIRES pair.
 const GLYPHS = 'c601576|c601576ae|012,17d,cde|2137bdc|c60428e|c63158e,678|012,17d|012,17d,cde|2139de|c63158e,678'.split('|')
-export let titling = true // true while the title is showing (drives pre-start pulse flow)
+export let isMenu = true // true while the title is showing (drives pre-start pulse flow)
 export let trans = 0
 // page-load intro: seconds since load. Held black for the first INTRO_HOLD, then the black
 // fades out over the next second (see render). Purely a load-in flourish.
@@ -77,11 +77,11 @@ function titleScreen() {
 }
 
 // build a Building record with the shared defaults (energy 0, no cooldown)
-const mkB = (t: BType, x: number, y: number, bp?: number): Building => ({ t, x, y, e: 0, cd: 0, bp })
+const mkB = (t: BType, x: number, y: number, bp?: number): Building => ({ t, x, y, e: 0, cd: 0, bp, ry: rnd() * Math.PI  })
 
 // in build mode with a Link or Tower selected, a click-drag lays a whole line of them
 // spaced at that tool's max connect range (see onpointerup).
-const lineTool = () => S.mode === 'build' && (S.tool === 'L' || S.tool === 'T')
+const lineTool = () => S.mode === 'build' && S.tool === 'L'
 
 const VARIANTS: [EType, number][] = [['rockSmall', NODE_AMT * 0.35], ['rockMedium', NODE_AMT * 0.65], ['rockMedium', NODE_AMT * 0.65], ['rockLarge', NODE_AMT]]
 const CRYSTALS = 400 // color crystals scattered across the map at world reset
@@ -138,9 +138,14 @@ function reset() {
 // fade). Mirrors the fresh-load path: origin-centered camera, empty world, then titleScreen().
 function toTitle() {
   S.enemies = []; S.pulses = []; S.parts = []; S.shots = []; S.emits = []; S.buildings = []; S.nodes = []
-  S.sel = null; S.mode = 'select'
+  S.sel = null; S.mode = 'select'; S.mouse = null; S.chainFrom = null
   SPAWN.x = SPAWN.y = S.camX = S.camY = 0
-  titling = true
+  // reset input state: game over can fire mid-press (selling the last building), and a stale
+  // `dragging`/hold-timer would carry into the next game as a "sticky" cursor.
+  dragging = didDrag = mmDrag = false; chainSrc = null
+  if (towerHold != null) { clearTimeout(towerHold); towerHold = null }
+  intro = 0 // replay the black fade-in (like page load) so the menu fades up from black
+  isMenu = true
   titleScreen()
 }
 
@@ -154,7 +159,7 @@ const my = (e: { clientY: number }) => e.clientY
 // it stays fixed on screen (clamped to MIN_ZOOM..MAX_ZOOM).
 C.onwheel = (e: WheelEvent) => {
   e.preventDefault()
-  if (titling) return
+  if (isMenu) return
   const before = unproject(mx(e), my(e))
   S.ZOOM = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, S.ZOOM * (e.deltaY < 0 ? 1.02 : 1 / 1.02)))
   const after = unproject(mx(e), my(e))
@@ -191,10 +196,10 @@ C.onpointerdown = (e: PointerEvent) => {
   // (return so nothing else happens — the NEXT title click starts the transition). In-game
   // (SKIPTITLE), fall through so this same click still builds/selects/pans as normal —
   // otherwise the first press per load would be silently swallowed.
-  if (!audioOn) { audioOn = 1; zzfxX.resume(); playMusic(); if (titling) return }
+  if (!audioOn) { audioOn = 1; zzfxX.resume(); playMusic(); if (isMenu) return }
   // while on the title, clicks never select/build/pan — they only kick off the start
   // transition (once).
-  if (titling) { if (!trans) trans = 0.0001; return }
+  if (isMenu) { if (!trans) trans = 0.0001; return }
   downX = mx(e)
   downY = my(e)
   panX = S.camX
@@ -205,9 +210,12 @@ C.onpointerdown = (e: PointerEvent) => {
   // if the press lands on an existing link, a drag re-routes it toward another link
   // (instead of panning) — see onpointerup.
   const dp = unproject(downX, downY)
-  chainSrc = S.mode === 'select' ? nearest(dp, (b) => b.t === 'L', 12 * 12) : null
+  // SELL mode: tapping (or, via onpointermove, dragging over) a building demolishes it. `dragging`
+  // is already set above, so a drag keeps selling; no pan/build/select happens.
+  if (S.mode === 'sell') { sellAt(dp); C.setPointerCapture(e.pointerId); return }
+  chainSrc = S.mode === 'select' ? nearest(dp, (b) => b.t === 'L') : null
   // press on the already-selected tower: arm the long-press eject (a quick release cycles instead)
-  if (S.mode === 'select' && S.sel && S.sel.t === 'T' && S.sel.bp == null && nearest(dp, (b) => b === S.sel, 12 * 12)) {
+  if (S.mode === 'select' && S.sel && S.sel.t === 'T' && S.sel.bp == null && nearest(dp, (b) => b === S.sel)) {
     const tgt = S.sel
     towerHold = setTimeout(() => { towerHold = null; ejectSpec(tgt); drawUI() }, 500)
   }
@@ -227,6 +235,8 @@ C.onpointerdown = (e: PointerEvent) => {
 C.onpointermove = (e: PointerEvent) => {
   S.mouse = { x: mx(e), y: my(e) }
   if (!dragging) return
+  // sell mode: dragging over buildings demolishes each one it passes
+  if (S.mode === 'sell') { sellAt(unproject(mx(e), my(e))); return }
   if (mmDrag) {
     const w = mmToWorld(mx(e), my(e))
     S.camX = w.x
@@ -263,7 +273,7 @@ C.onpointermove = (e: PointerEvent) => {
     // only links within LINK_RANGE of the source can be chained — energy won't flow across a
     // longer gap, so a further link would just be a dead connection.
     const tgt = nearest(w, (b) => b !== chainSrc && b.t === 'L'
-      && (b.x - chainSrc!.x) ** 2 + (b.y - chainSrc!.y) ** 2 <= LINK_RANGE ** 2, 8 * 8)
+      && (b.x - chainSrc!.x) ** 2 + (b.y - chainSrc!.y) ** 2 <= LINK_RANGE ** 2)
     if (tgt) {
       if (tgt.route === chainSrc) tgt.route = null // can't have opposing links (A->B and B->A)
       chainSrc.route = tgt
@@ -281,11 +291,12 @@ C.onpointermove = (e: PointerEvent) => {
   }
 }
 C.onpointerup = (e: PointerEvent) => {
-  if (e.button || titling) return // no select/build on release while the title is up
+  if (e.button || isMenu) return // no select/build on release while the title is up
   dragging = false
   mmDrag = false
   S.chainFrom = null // end any preview line
   C.releasePointerCapture?.(e.pointerId)
+  if (S.mode === 'sell') return // sell happened on down/move; nothing to do on release
   const p = unproject(mx(e), my(e))
   // any drag (pan, chain-connect, or build-line) did its work live in onpointermove —
   // nothing to place on release. Only a non-drag click reaches the build/select logic.
@@ -308,7 +319,7 @@ C.onpointerup = (e: PointerEvent) => {
       if (S.sel && S.sel.t === 'T') { cycleSpec(S.sel); drawUI() }
       return
     }
-    const hit = nearest(p, () => true, 12 * 12)
+    const hit = nearest(p, () => true)
     // clicking an ALREADY-SELECTED finished link cycles its color filter: any->R->G->B->any.
     if (hit && hit === S.sel && hit.bp == null && hit.t === 'L' && !hit.crystalCol) {
       hit.filt = [4, 0, 1, , 2][hit.filt || 0] // cycle any(0)->R(4)->G(2)->B(1)->any
@@ -342,19 +353,25 @@ addEventListener('keydown', (e: KeyboardEvent) => {
     toggleMute()
     return
   }
-  // 'd': sell the selected building, refunding half its build cost. Selling a DEPLETED miner
-  // (no live crystal in mining range) sells EVERY depleted miner at once — a one-key cleanup of
-  // spent mining sites. Any other building sells just itself.
-  if (e.key === 'd' && S.sel) {
-    const starved = (b: Building) => b.t === 'M' &&
-      !S.nodes.some((n) => n.amt > 0 && (n.x - b.x) ** 2 + (n.y - b.y) ** 2 < MINE_RANGE ** 2)
-    const doomed = starved(S.sel) ? S.buildings.filter(starved) : [S.sel]
-    for (const b of doomed) S.resource += COST[b.t] / 2
-    S.buildings = S.buildings.filter((b) => !doomed.includes(b))
-    S.sel = null
-    drawUI()
-  }
+  // 'd': toggle sell mode (same as the HUD Sell button) — then tap/drag buildings to demolish
+  if (e.key === 'd') { S.mode = S.mode === 'sell' ? 'select' : 'sell'; S.sel = null; drawUI() }
 })
+// sell `b`, refunding half its build cost. Color crystals are indestructible world fixtures and
+// never sell. Selling a DEPLETED miner (no live crystal in range) sells EVERY depleted miner at
+// once — a one-tap cleanup of spent mining sites; any other building sells just itself.
+function sellBuilding(b: Building) {
+  if (b.crystalCol != null) return
+  const starved = (o: Building) => o.t === 'M' &&
+    !S.nodes.some((n) => n.amt > 0 && (n.x - o.x) ** 2 + (n.y - o.y) ** 2 < MINE_RANGE ** 2)
+  const doomed = starved(b) ? S.buildings.filter(starved) : [b]
+  for (const o of doomed) S.resource += COST[o.t] / 2
+  S.buildings = S.buildings.filter((o) => !doomed.includes(o))
+}
+// sell whatever sellable building is under world point `p` (sell-mode tap/drag). Skips crystals.
+function sellAt(p: { x: number; y: number }) {
+  const b = nearest(p, (o) => o.crystalCol == null)
+  if (b) { sellBuilding(b); if (S.sel === b) S.sel = null; drawUI() }
+}
 
 // --- main loop ---
 let last = performance.now()
@@ -364,17 +381,20 @@ function loop(now: number) {
   last = now
   intro += dt // page-load fade-in timer (render draws black for INTRO_HOLD then fades it out)
   stepSim(dt)
-  LT.dayT = (LT.dayT + dt / LT.dayLen) % 1
+  // advance the day/night clock, but move 3x SLOWER through the daytime half (dayT .25..75, sun
+  // up) so days last 3x longer while nights keep their length.
+  const day = LT.dayT > .25 && LT.dayT < .75
+  LT.dayT = (LT.dayT + dt / LT.dayLen * (day ? 1 / 3 : 1)) % 1
 
   // interval-based (not random): spray energy through the letters every 0.25s, spawn a
   // drifting enemy for the towers every 0.8s.
-  if (titling) {
+  if (isMenu) {
     if ((relayT -= dt) <= 0) { relayT = .1; S.buildings.forEach((b) => b.emit && relay(b, 0)) }
     if ((enemyT -= dt) <= 0) { enemyT = .8; spawnEnemy() }
   }
   // GAME OVER: once in-game, if the player has lost every building they own (only the
   // indestructible color crystals remain), snap straight back to the title — no fade.
-  if (!titling && !trans && !S.buildings.some((b) => b.crystalCol == null)) {
+  if (!isMenu && !trans && !S.buildings.some((b) => b.crystalCol == null)) {
     H.innerHTML = '' // hide the toolbar/HUD
     toTitle()
   }
@@ -383,7 +403,7 @@ function loop(now: number) {
   if (trans > 0 && trans < 2) {
     const was = trans < 1
     trans = Math.min(2, trans + dt / 1.3) // ~1.3s cover (0→1) + ~1.3s reveal (1→2)
-    if (was && trans >= 1) { titling = false; reset() }
+    if (was && trans >= 1) { isMenu = false; reset() }
     if (trans >= 2) trans = 0 // fade complete: idle so the next start-click can fire
   }
   computeSun(LT.dayT)
@@ -394,7 +414,7 @@ function loop(now: number) {
 // SKIPTITLE (injected by bundle.js): true in dev to boot straight into the game, skipping the
 // title/menu. Injected as a literal so the dead branch folds away entirely in release.
 declare const SKIPTITLE: boolean
-if (SKIPTITLE) { titling = false; LT.dayT = .35; reset(); drawUI() }
+if (SKIPTITLE) { isMenu = false; LT.dayT = .35; reset(); drawUI() }
 else titleScreen()
 requestAnimationFrame(loop)
 // dev: expose reset() on window as regen() to re-run world generation from the console

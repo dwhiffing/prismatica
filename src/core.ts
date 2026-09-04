@@ -46,13 +46,20 @@ export function canPlace(t: BType, x: number, y: number): boolean {
   return true
 }
 // nearest building to `from` passing `pred`, within max distance² `maxD2`
-export function nearest(from: Pt, pred: (b: Building) => boolean, maxD2: number): Building | null {
-  let best: Building | null = null
+// nearest matching building whose clickable disc contains `from`. The pick radius is per-entity
+// (its collision radius R[b.t] plus `pad` world units of slop), so big buildings are easier to
+// hit than small ones. Ties resolve to the closest center.
+export function nearest(from: Pt, pred: (b: Building) => boolean, pad = 3): Building | null {
+  // buildings are drawn standing UP off the ground, so their on-screen body sits a bit "above"
+  // their ground point. Bias the pick point up the world diagonal (which maps to up-screen in the
+  // dimetric view) so a click on the visible model, not the shadow below it, registers.
+  const p = { x: from.x + 3, y: from.y + 3 }
+  let best: Building | null = null, bestD = Infinity
   for (const b of S.buildings) {
     if (!pred(b)) continue
-    const d = dist2(from, b)
-    if (d < maxD2) {
-      maxD2 = d
+    const d = dist2(p, b)
+    if (d < (R[b.t] + pad) ** 2 && d < bestD) {
+      bestD = d
       best = b
     }
   }

@@ -44,6 +44,7 @@ export interface Building extends Pt {
   filt?: number // link color filter: 0=any(yellow), else only energy with this bit (4=R,2=G,1=B)
   drain?: number // title menu only: energy arriving here is consumed (never forwarded/bounced)
   emit?: number // title menu only: this dot is its letter's sole energy source (see spray)
+  ry?: number // random Y rotation (radians) so towers don't all face the same way
 }
 export interface ResNode extends Pt {
   amt: number // resources remaining
@@ -58,6 +59,7 @@ export interface Enemy extends Pt {
   k?: number // kind: 0 normal, 1 shield, 2 shielder, 3 fast, 4 summoner, 5 boss
   sh?: number // current shield hp (shield/shielded enemies); absorbs damage before hp
   sh0?: number // max shield (for regen cap by a shielder)
+  hurtT?: number // seconds of shield-regen immunity remaining after taking damage (0.5 on hit)
   spd?: number // per-kind movement speed override (fast=high, boss/summoner=low)
   spin?: number // body spin rate (rad/sec about Y); sign = CW/CCW, randomized per enemy at spawn
   face?: number // fast enemies: Y-yaw pointing along their movement (instead of spinning)
@@ -106,6 +108,7 @@ export interface Pulse {
   len: number // world length of the hop (for constant-speed travel)
   dst: Building // the node this pulse is arriving at (routed further, or consumed)
   col: number // energy color bitmask (4=R,2=G,1=B; 0=uncolored)
+  avoid?: Building // a building the next relay must not deliver to (pushes ejected energy away)
 }
 
 // --- render types ---

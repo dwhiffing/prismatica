@@ -6,6 +6,7 @@ import {
   LINK_MAX,
   LINK_RANGE,
   LOD_ZOOM,
+  MINE_ON,
   MINE_RANGE,
   R,
   REVEAL,
@@ -27,7 +28,7 @@ declare const FOG: boolean
 import { ENTITIES, type Entity } from './models'
 import { LT, S, SUN, V, X } from './state'
 import { wepRng } from './sim'
-import { intro, INTRO_HOLD, titling, trans } from './game'
+import { intro, INTRO_HOLD, isMenu, trans } from './game'
 import type { Enemy, Face, V3 } from './types'
 
 // link color-filter tint, indexed by the filter bitmask (0=any/yellow, 1=B, 2=G, 4=R)
@@ -77,16 +78,18 @@ function entityFaces(
   gz: number,
   s: number,
   out: Face[],
-  override?: string, // tint EVERY spline this color (blocked-placement preview)
+  override?: string | (string | undefined)[], // tint EVERY spline this color, OR an array to tint
+  // each spline by index (per-spline tint, e.g. a tower's weapon/elem colors on splines 0/1)
   swapGreen?: string, // recolor only the miner's green (#4f8) spline (starved indicator)
   yaw = 0, // whole-model rotation about Y (random per crystal so they don't all face alike)
   ta = 1, // override strength 0..1: <1 blends the override toward each spline's own color
 ) {
   const yc = Math.cos(yaw), ys = Math.sin(yaw)
-  for (const sp of ent.splines) {
+  ent.splines.forEach((sp, si) => {
     const m = meshOf(sp.geo)
-    const col = override
-      ? (ta < 1 ? mixHex(override, sp.mat.col, ta) : override)
+    const ov = Array.isArray(override) ? override[si] : override // per-spline color, or one for all
+    const col = ov
+      ? (ta < 1 ? mixHex(ov, sp.mat.col, ta) : ov)
       : (swapGreen && sp.mat.col === '#4f8' ? swapGreen : sp.mat.col)
     for (const f of m.faces) {
       const wv: V3[] = f.map((i) => {
@@ -125,7 +128,7 @@ function entityFaces(
         a: sp.mat.a,
       })
     }
-  }
+  })
 }
 
 function fillFace(f: Face) {
@@ -222,28 +225,25 @@ function addShadow(ent: Entity, gx: number, gz: number, s: number) {
   tp(pts.map(p => iso(gx + p[0] * s, 0, gz + p[1] * s)))
 }
 
-// outline an entity's on-screen silhouette: project every vertex to screen space,
-// convex-hull them, and stroke the hull. Used to highlight under-construction buildings.
-function entityOutline(ent: Entity, gx: number, gz: number, s: number, col: string, lw = 2, alpha = 1) {
-  const pts: [number, number][] = []
-  for (const sp of ent.splines) {
-    const m = meshOf(sp.geo)
-    for (const v of m.verts) {
-      const lv = xv(v, sp)
-      pts.push(
-        iso(gx + (lv[0] + sp.off[0]) * s, Math.max(0, (lv[1] + sp.off[1]) * s), gz + (lv[2] + sp.off[2]) * s),
-      )
-    }
-  }
-  const h = hull(pts)
-  if (h.length < 3) return
+// outline an entity's on-screen silhouette. By default all splines merge into ONE convex hull.
+// With perSpline, each spline is hulled separately (its distinct pieces show) — used for towers.
+function entityOutline(ent: Entity, gx: number, gz: number, s: number, col: string, lw = 2, alpha = 1, perSpline = false, yaw = 0) {
+  const yc = Math.cos(yaw), ys = Math.sin(yaw)
+  const proj = (sp: typeof ent.splines[0]) => meshOf(sp.geo).verts.map((v): [number, number] => {
+    const lv = xv(v, sp)
+    const lx = lv[0] + sp.off[0], lz = lv[2] + sp.off[2] // yaw about Y, matching entityFaces()
+    return iso(gx + (lx * yc - lz * ys) * s, Math.max(0, (lv[1] + sp.off[1]) * s), gz + (lx * ys + lz * yc) * s)
+  })
   X.strokeStyle = col
   X.globalAlpha = alpha
   X.lineWidth = lw
   X.lineJoin = 'round'
   X.beginPath()
-  tp(h)
-  X.closePath()
+  if (perSpline) {
+    for (const sp of ent.splines) { const h = hull(proj(sp)); if (h.length >= 3) { tp(h); X.closePath() } }
+  } else {
+    const h = hull(ent.splines.flatMap(proj)); if (h.length >= 3) { tp(h); X.closePath() }
+  }
   X.stroke()
   X.lineWidth = 1
   X.globalAlpha = 1
@@ -263,10 +263,10 @@ function onScreen(o: { x: number; y: number }): boolean {
 }
 
 // LOD fallback: a flat colored square at a ground point (used when zoomed far out)
-function dot(gx: number, gy: number, c: string) {
-  const [sx, sy] = iso(gx, 0, gy)
+function dot(gx: number, gy: number, c: string, m = 1, h = 0) {
+  const [sx, sy] = iso(gx, h, gy) // h lifts the dot off the ground (e.g. links sit low otherwise)
   X.fillStyle = c
-  X.fillRect(sx - 2, sy - 2, 4, 4)
+  X.fillRect(sx - 2 * m, sy - 2 * m, 4 * m, 4 * m)
 }
 
 
@@ -299,6 +299,12 @@ export function render() {
 
   if (S.sel && !buildings.includes(S.sel)) S.sel = null // selection was destroyed
 
+  // Two levers keep the frame cheap with hundreds of entities:
+  //  - viewport cull (onScreen): off-screen entities are skipped everywhere.
+  //  - LOD dots: when zoomed far out, everything draws as a flat colored dot instead of a
+  //    3D mesh, and shadows are skipped — a lathed mesh + shade() + global depth-sort per
+  //    entity is wasted when each is only a few pixels.
+  const DOTS = S.ZOOM < LOD_ZOOM
   // range rings: only for the selected building (placement preview shows its own).
   if (S.sel) drawRanges(S.sel.t, S.sel.x, S.sel.y, 0.5, S.sel.t === 'T' ? wepRng(S.sel) : 1)
   // construction progress ring (green chunks). Silhouette outlines (selected crystal +
@@ -307,25 +313,48 @@ export function render() {
     if (b.bp != null)
       chunkRing(b.x, b.y, R[b.t] + 5, BUILD[b.t], BUILD[b.t] - b.bp)
   // shielder enemies (kind 2): cyan ground ring marking the radius they regen shields within.
-  for (const e of enemies)
+  if (!DOTS) for (const e of enemies)
     if (e.k === 2 && onScreen(e)) groundRing(e.x, e.y, SHIELDER_RANGE, '#4ff', 0.4, 2)
-
-  // Two levers keep the frame cheap with hundreds of entities:
-  //  - viewport cull (onScreen): off-screen entities are skipped everywhere.
-  //  - LOD dots: when zoomed far out, everything draws as a flat colored dot instead of a
-  //    3D mesh, and shadows are skipped — a lathed mesh + shade() + global depth-sort per
-  //    entity is wasted when each is only a few pixels.
-  const DOTS = S.ZOOM < LOD_ZOOM
+  // soft radial glow at screen (ax,ay): `c` is the "r,g,b" body, `k` scales opacity, `sc` scales
+  // the radius. Defined at render scope (above the model pass) so the tower BONUS aura can paint
+  // BEHIND the towers; the later pulse/beam/miner glows reuse it.
+  const rad = 7 * S.ZOOM // glow radius (shared by chain beams, energy pulses, miner lasers)
+  const glow = (ax: number, ay: number, c: string, k = 1, sc = 1) => {
+    const r = rad * sc
+    const grd = X.createRadialGradient(ax, ay, 0, ax, ay, r)
+    grd.addColorStop(0, `rgba(${c},${k})`)
+    grd.addColorStop(0.23, `rgba(${c},${0.2 * k})`)
+    grd.addColorStop(1, `rgba(${c},0)`)
+    X.fillStyle = grd
+    X.fillRect(ax - r, ay - r, r * 2, r * 2)
+  }
   if (DOTS) {
     // map-legend dot colors by building type (distinct from the 3D model palette COL)
     for (const n of nodes)
-      if ((n.ds || 0) > 0.02 && onScreen(n)) dot(n.x, n.y, '#0ff') // crystals: cyan
+      if ((n.ds || 0) > 0.02 && onScreen(n)) dot(n.x, n.y, '#987', R[n.k] * .3 * n.ds! * (n.k === 'rockSmall' ? .6 : n.k === 'rockLarge' ? 1.2 : 1)) // dot sized by rock size (× shrink)
     for (const b of buildings)
-      if (b.bp == null && onScreen(b))
-        dot(b.x, b.y, b.t === 'S' ? '#a4f' : b.t === 'L' ? '#ff4' : b.t === 'M' ? '#4f8' : '#F84')
-    for (const e of enemies)
-      if (onScreen(e)) dot(e.x, e.y, '#f00')
+      if (b.bp == null && onScreen(b)) {
+        if (b.crystalCol != null) { // color crystal: a circle in its color
+          const [sx, sy] = iso(b.x, 0, b.y)
+          X.fillStyle = b.crystalCol === 4 ? '#f66' : b.crystalCol === 2 ? '#6f6' : '#66f'
+          X.beginPath(); X.arc(sx, sy, 3, 0, 7); X.fill()
+        } else if (b.t === 'T') { // any tower: 3 SPEC dots (downward triangle) — empty slots white border
+          const [sx, sy] = iso(b.x, 20, b.y), orbs = [b.weapon, b.elem, b.bonus] // at the muzzle (shoot height)
+          // slot 0/1 on top (left/right), slot 2 centered below (same style as the selected-tower pips)
+          const pos: [number, number][] = [[-5, -5], [5, -5], [0, 5]]
+          X.lineWidth = 1
+          for (let i = 0; i < 3; i++) {
+            const x = sx + pos[i][0] - 3, y = sy + pos[i][1] - 3
+            if (orbs[i] != null) { X.fillStyle = PIPCOL[orbs[i]!]; X.fillRect(x, y, 6, 6) }
+            else { X.strokeStyle = '#fff'; X.strokeRect(x + .5, y + .5, 5, 5) }
+          }
+        } else
+          dot(b.x, b.y, b.t === 'S' ? '#a4f' : b.t === 'L' ? '#ff4' : b.t === 'M' ? '#4f8' : '#F84', b.t === 'S' ? 2 : b.t === 'M' ? 1.5 : 1, b.t === 'L' || b.t === 'M' ? 8 : 0) // solars 2x; miners 1.5x; links+miners lifted
+      }
+    for (const e of enemies) // enemies: a 45°-rotated square (diamond)
+      if (onScreen(e)) { const [sx, sy] = iso(e.x, 0, e.y), r = 2.5; X.fillStyle = '#f00'; X.save(); X.translate(sx, sy); X.rotate(Math.PI / 4); X.fillRect(-r, -r, r * 2, r * 2); X.restore() }
   } else {
+    // cast drop shadows: collect every silhouette into ONE path, then fill once so
     // cast drop shadows: collect every silhouette into ONE path, then fill once so
     // overlapping shadows merge into a single flat region (no darker overlaps).
     X.fillStyle = '#000'
@@ -340,6 +369,20 @@ export function render() {
     X.fill('nonzero') // nonzero winding: overlaps count as inside, filled uniformly
     X.globalAlpha = 1
 
+    // tower auras, painted BEHIND the tower model (drawn just below): the BONUS (3rd orb) color
+    // as an on-ground pool at the base (squashed 40% vertically), and the WEAPON (1st orb) color
+    // as a glow up at the muzzle — where the laser fires from (height 20).
+    for (const b of buildings)
+      if (b.t === 'T') {
+        if (b.bonus != null) {
+          const [ax, ay] = g(b.x, b.y, 0)
+          X.save(); X.translate(ax, ay); X.scale(1, .6) // 40% vertical squash into a ground pool
+          glow(0, 0, PIPRGB[b.bonus], 1.05, 2) // 50% brighter (k .7 -> 1.05)
+          X.restore()
+        }
+        if (b.weapon != null) { const [ax, ay] = g(b.x, b.y, 20); glow(ax, ay, PIPRGB[b.weapon], 1.05, 1.2) }
+      }
+
     // collect faces (skip under-construction buildings — those draw at half opacity)
     const faces: Face[] = []
     for (const n of nodes)
@@ -348,13 +391,14 @@ export function render() {
       if (b.bp == null && onScreen(b))
         entityFaces(ENTITIES[b.ek ?? b.t], b.x, b.y, 1, faces,
           // overloaded link flashes red; a link is tinted by its color filter (yellow=any,
-          // R/G/B); a tower in upgrade mode reads dark (disabled), an upgraded tower is tinted
-          // by its ELEMENT (2nd orb); other buildings keep their own color.
+          // R/G/B). A TOWER tints per spline: spline 0 by its ELEMENT color (2nd orb), spline 1 by
+          // its WEAPON color (1st orb); further splines keep their own color. Others: own color.
           b.crystalCol != null ? (b.crystalCol === 4 ? '#f66' : b.crystalCol === 2 ? '#6f6' : '#66f')
             : b.load! > LINK_MAX ? '#f33'
             : b.t === 'L' ? FILTCOL[b.filt || 0]
-            : b.t === 'T' ? (b.elem != null ? PIPCOL[b.elem] : undefined) : undefined,
-          b.t === 'M' && starved(b) ? '#a4f' : undefined)
+            // spline 0 = element color, darkened (50% brightness); spline 1 = weapon color
+            : b.t === 'T' ? [b.elem != null ? mixHex(PIPCOL[b.elem], '#000', .5) : undefined, b.weapon != null ? PIPCOL[b.weapon] : undefined] : undefined,
+          b.t === 'M' && starved(b) ? '#a4f' : undefined, b.ry)
     for (const e of enemies)
       // fast enemies face their heading (e.face); all others spin (spin·t).
       if (onScreen(e)) entityFaces(emodel(e), e.x, e.y, escale(e), faces, enemyTint(e), undefined, e.k === 3 ? e.face || 0 : (e.spin || 0) * S.t, enemyTintA(e))
@@ -366,10 +410,10 @@ export function render() {
   // under-construction buildings: draw a white silhouette outline (the model itself
   // stays invisible; the chunk ring shows build progress on the ground)
   if (!DOTS) {
-    for (const b of buildings)
-      if (b.bp != null && onScreen(b)) entityOutline(ENTITIES[b.ek ?? b.t], b.x, b.y, 1, '#fff')
+    for (const b of buildings) // towers outline per-spline; other buildings as one merged hull
+      if (b.bp != null && onScreen(b)) entityOutline(ENTITIES[b.ek ?? b.t], b.x, b.y, 1, '#fff', 2, 1, b.t === 'T', b.ry)
     // selected building: white silhouette outline on top of its (already-drawn) model
-    if (S.sel && S.sel.bp == null) entityOutline(ENTITIES[S.sel.ek ?? S.sel.t], S.sel.x, S.sel.y, 1, '#fff')
+    if (S.sel && S.sel.bp == null) entityOutline(ENTITIES[S.sel.ek ?? S.sel.t], S.sel.x, S.sel.y, 1, '#fff', 2, 1, S.sel.t === 'T', S.sel.ry)
   }
 
   // build-mode placement preview: translucent model + range ring under the cursor
@@ -417,7 +461,7 @@ export function render() {
   X.lineWidth = 2
   X.setLineDash([6, 6])
   X.lineDashOffset = -S.t * 12 // marches along the line over time
-  if (!titling) for (const b of buildings)
+  if (!isMenu && !DOTS) for (const b of buildings)
     if (b.route && buildings.includes(b.route)) {
       const [ax, ay] = g(b.x, b.y, 6),
         [bx, by] = g(b.route.x, b.route.y, 6)
@@ -431,19 +475,6 @@ export function render() {
   }
   X.setLineDash([])
   X.lineWidth = 1
-
-  const rad = 7 * S.ZOOM // glow radius (shared by chain beams, energy pulses, miner lasers)
-  // soft radial glow at screen (ax,ay): `c` is the "r,g,b" body, `k` scales opacity,
-  // `sc` scales the radius.
-  const glow = (ax: number, ay: number, c: string, k = 1, sc = 1) => {
-    const r = rad * sc
-    const grd = X.createRadialGradient(ax, ay, 0, ax, ay, r)
-    grd.addColorStop(0, `rgba(${c},${k})`)
-    grd.addColorStop(0.23, `rgba(${c},${0.2 * k})`)
-    grd.addColorStop(1, `rgba(${c},0)`)
-    X.fillStyle = grd
-    X.fillRect(ax - r, ay - r, r * 2, r * 2)
-  }
 
   // energy pulses: colored glowing orbs — color encodes the energy's RGB bitmask.
   // Index 0 = uncolored (warm dim white), 1-7 = B/G/GB/R/RB/RG/RGB via bitmask.
@@ -461,7 +492,10 @@ export function render() {
     const x = p.x + (p.tx - p.x) * p.p, y = p.y + (p.ty - p.y) * p.p
     const [sx, sy] = g(x, y, 8)
     const [c, k, sc] = PCOLS[p.col & 7]
-    glow(sx, sy, c, k, sc)
+    // zoomed far out: a small colored square per pulse (glows would be an illegible smear) —
+    // colored energy draws 3x3 to stand out, uncolored stays a single pixel.
+    if (DOTS) { const w = p.col & 7 ? 3 : 1; X.fillStyle = `rgb(${c})`; X.fillRect((sx | 0) - (w >> 1), (sy | 0) - (w >> 1), w, w) }
+    else glow(sx, sy, c, k, sc)
   }
 
   // tower + miner beams use the UNCOLORED energy look (warm dim white, = PCOLS[0])
@@ -490,7 +524,7 @@ export function render() {
       const [ax, ay] = g(b.x, b.y, 13)
       if (b.mn) {
         const mp = b.mp || 0
-        const a = Math.max(0, Math.min(1, Math.min(mp, 1 - mp) / 0.3)) // shared fade
+        const a = Math.max(0, Math.min(1, Math.min(mp, MINE_ON - mp) / 0.3)) // fade in/out over the firing window
         const [bx, by] = g(b.mn.x, b.mn.y, 3) // impact ~20% lower on the rock (was 6)
         glow(ax, ay, UNCOL, a) // origin glow
         glow(bx, by, UNCOL, a, 0.8) // impact glow at the crystal (half size)
@@ -501,16 +535,10 @@ export function render() {
         glow(ax, ay, '180,110,255')
       }
     }
-  // upgraded-tower aura: a fully specced tower glows in its BONUS (3rd orb) color.
-  for (const b of buildings)
-    if (b.t === 'T' && b.bonus != null) {
-      const [ax, ay] = g(b.x, b.y, 12)
-      glow(ax, ay, PIPRGB[b.bonus], 0.7, 1.4)
-    }
   // enemy health bar: ONE bar above each enemy. Red HP fill (hp/hp0) over a dark track, with
   // the cyan shield drawn as a LAYER ON TOP of it (sh/sh0, same bar). Hidden at full hp & no
-  // shield so undamaged normals stay clean.
-  for (const e of enemies) {
+  // shield so undamaged normals stay clean; hidden when zoomed out to DOTS or on the title.
+  if (!DOTS && !isMenu) for (const e of enemies) {
     // show the bar if the enemy is hurt OR carries a shield (shielded units always show it).
     if (!onScreen(e) || (e.hp >= (e.hp0 || 1) && !e.sh0)) continue
     const w = 14 * escale(e), [cx, cy] = g(e.x, e.y, 22 * escale(e)), bx = cx - w / 2
@@ -519,31 +547,45 @@ export function render() {
     X.fillStyle = '#f44'; X.fillRect(bx, cy, w * Math.max(0, e.hp) / (e.hp0 || 1), 3) // hp
     if (e.sh! > 0) { X.fillStyle = '#4ff'; X.fillRect(bx, cy, w * e.sh! / e.sh0!, 3) } // shield on top
   }
-  // tower energy: a single subtle yellow bar (same style as the enemy health bar), shown only
-  // while below full charge. One layer over a dark track — no ground ring.
-  for (const b of buildings)
-    if (b.t === 'T' && b.bp == null && b.e < CHARGE && onScreen(b)) {
+  // tower energy: a single subtle yellow bar (enemy-health-bar style), only for the SELECTED
+  // tower and only while below full charge. One layer over a dark track — no ground ring.
+  {
+    const b = S.sel
+    if (b && b.t === 'T' && b.bp == null && b.e < CHARGE && onScreen(b)) {
       const [cx, cy] = g(b.x, b.y, 26), bx = cx - 7
       X.globalAlpha = 1
       X.fillStyle = '#430'; X.fillRect(bx, cy, 14, 3)                    // dark track
       X.fillStyle = '#fe4'; X.fillRect(bx, cy, 14 * b.e / CHARGE, 3)     // yellow energy
     }
-  // spec pips: 3 slots above any tower holding at least one absorbed color. Each FILLED slot
-  // (weapon / element / bonus, in the tower's current perm order) is tinted by that color, so
-  // red energy reads red; empty slots are gray. Tapping F reorders which color sits in which.
-  for (const b of buildings)
-    if (b.t === 'T' && b.cols && b.cols.length) {
+  }
+  // spec pips: 3 slots above the SELECTED tower (only) showing its absorbed colors. Each FILLED
+  // slot (weapon / element / bonus, in the tower's current perm order) is tinted by that color;
+  // empty slots are gray. Tapping F reorders which color sits in which. (Zoomed-out DOTS mode
+  // shows a tower's colors via its dot instead, so pips are hidden there.)
+  X.globalAlpha = 1 // reset: prior particle/pulse glows leave alpha <1, which would blink the pips
+  {
+    const b = S.sel
+    if (!DOTS && b && b.t === 'T' && b.bp == null) {
       const orbs = [b.weapon, b.elem, b.bonus] // color-index (0..6) per slot (undefined = empty)
       const [cx, cy] = g(b.x, b.y, 30)
+      // downward triangle: slots 0/1 on top, 2 below-center. Filled slots draw solid in their
+      // color; empty slots draw as a white outline (border) instead.
+      const pos: [number, number][] = [[-5, -5], [5, -5], [0, 5]]
+      X.lineWidth = 1
       for (let i = 0; i < 3; i++) {
-        X.fillStyle = orbs[i] != null ? PIPCOL[orbs[i]!] : '#555'
-        X.fillRect(cx - 8 + i * 6, cy, 4, 4)
+        const x = cx + pos[i][0] - 3, y = cy + pos[i][1] - 3
+        if (orbs[i] != null) { X.fillStyle = PIPCOL[orbs[i]!]; X.fillRect(x, y, 6, 6) }
+        else { X.strokeStyle = '#fff'; X.strokeRect(x + .5, y + .5, 5, 5) } // empty: white border
       }
     }
+  }
   // tower projectiles — orb, trail, and explosion all carry the shot's color (s.col), which is
   // the tower's element tint (or the weapon default when it has no element).
   for (const s of S.shots) {
-    const [sx, sy] = g(s.x, s.y, s.rocket ? 8 : 5)
+    // launch from the TOP of the tower (~20) like the laser, then settle to the projectile's
+    // travel height over the first ~0.15s so it reads as fired from the muzzle, not the base.
+    const base = s.rocket ? 8 : 5, h = base + (20 - base) * Math.max(0, 1 - s.age / .15)
+    const [sx, sy] = g(s.x, s.y, h)
     let a = 1, sc = s.rocket ? (s.big ? 1 : 0.8) : 0.5
     if (s.sz) {
       // flame puff: translucent, grows small->big over its life, then fades to 0 after 80%.
