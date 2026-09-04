@@ -380,11 +380,13 @@ function loop(now: number) {
   const dt = Math.min(0.05, (now - last) / 1000)
   last = now
   intro += dt // page-load fade-in timer (render draws black for INTRO_HOLD then fades it out)
-  stepSim(dt)
+  // game-world time scales with the HUD speed control (paused..3x); UI fades below use real dt.
+  const sdt = dt * S.speed
+  stepSim(sdt)
   // advance the day/night clock, but move 3x SLOWER through the daytime half (dayT .25..75, sun
   // up) so days last 3x longer while nights keep their length.
   const day = LT.dayT > .25 && LT.dayT < .75
-  LT.dayT = (LT.dayT + dt / LT.dayLen * (day ? 1 / 3 : 1)) % 1
+  LT.dayT = (LT.dayT + sdt / LT.dayLen * (day ? 1 / 3 : 1)) % 1
 
   // interval-based (not random): spray energy through the letters every 0.25s, spawn a
   // drifting enemy for the towers every 0.8s.

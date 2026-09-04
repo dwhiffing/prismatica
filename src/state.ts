@@ -41,6 +41,7 @@ export const S = {
   queue: [] as number[], // enemy kinds still to spawn in the current wave (drained a few/sec)
   spawnT: 0, // spawn-pacing accumulator (seconds; spawns one queued enemy each SPAWN_GAP)
   won: 0, // set to 1 once the final wave is cleared (drives the win banner / end)
+  speed: 1, // game-speed multiplier from the HUD time controls: 0=paused, .5, 1, 2, 3
   t: 0, // elapsed seconds
   ZOOM: INIT_ZOOM, // camera zoom (scroll wheel to change; clamped MIN_ZOOM..MAX_ZOOM)
   camX: 0,
