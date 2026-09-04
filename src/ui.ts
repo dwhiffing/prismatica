@@ -1,32 +1,31 @@
 // Toolbar / HUD: the top button strip and resource readout.
-import { COST, WAVE1_DELAY, WAVE_WIN } from './constants'
+import { COST } from './constants'
 import { H, S } from './state'
 import type { BType } from './types'
 
 const TOOLS: [BType, string][] = [
+  ['S', 'Solar'],
   ['L', 'Link'],
   ['M', 'Miner'],
   ['T', 'Tower'],
-  ['S', 'Solar'],
 ]
 
+// class=a when active, else nothing (highlights the current tool / sell / etc.)
+const act = (on: boolean) => on ? 'class=a ' : ''
 export function drawUI() {
+  // bottom bar (#b, space-between): time control | build tools | sell. Top-right (#t): readouts.
+  // Readout <b>s carry no data-t, so the click handler ignores them (missing key === no-op).
+  const wave = `Wave ${S.wave}`
   H.innerHTML =
-    TOOLS.map(
-      ([k, n]) =>
-        `<b class="${S.mode === 'build' && S.tool === k ? 'a' : ''}" data-t="${k}">${n} $${COST[k]}</b>`,
-    ).join('') +
-    // sell toggle: highlighted (class 'a') while sell mode is active
-    `<b class="${S.mode === 'sell' ? 'a' : ''}" data-t="d">Sell</b>` +
-    `<b data-t="_">Res:${S.resource | 0} (+${Math.ceil(S.rps)}/s)</b>` +
-    // wave readout: a countdown until wave 1, then "Wave N/WIN", then a win banner.
-    `<b data-t="_">${S.won ? 'YOU WIN!' : S.wave ? `Wave ${S.wave}/${WAVE_WIN}` : `Wave 1 in ${Math.ceil(WAVE1_DELAY - S.t)}s`}</b>` +
-    `<b data-t="s">${S.speed}x</b>`
+    `<div id=b><div><b data-t=s>${S.speed}x</b></div><div>` +
+    TOOLS.map(([k, n]) => `<b ${act(S.mode === 'build' && S.tool === k)}data-t=${k}>${n}<br>$${COST[k]}</b>`).join('') +
+    `</div><div><b ${act(S.mode === 'sell')}data-t=d>Sell</b></div></div>` +
+    `<div id=t><b>$${S.resource | 0} (+${Math.ceil(S.rps)}/s)</b><b>${wave}</b></div>`
 }
 
 H.onclick = (e: MouseEvent) => {
   const k = (e.target as HTMLElement).dataset.t
-  if (!k || k === '_') return
+  if (!k) return // readouts / gaps have no data-t
   if (k === 's') S.speed = (S.speed+1) % 4 // cycle speed
   else if (k === 'd') S.mode = S.mode === 'sell' ? 'select' : 'sell' // toggle sell mode
   else if (S.mode === 'build' && S.tool === k) S.mode = 'select' // toggle off

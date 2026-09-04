@@ -7,21 +7,48 @@
     margin: 0;
     font: 13px monospace;
     color: #9fb;
+    touch-action: none;
   }
 
   #h {
     position: fixed;
-    inset: auto 0 0 0;
-    padding: 6px;
+    inset: 0;
+    pointer-events: none
+  }
+
+  #h div {
     display: flex;
-    justify-content: center;
-    gap: 8px;
+    pointer-events: auto
+  }
+
+  #b,
+  #t {
+    position: absolute;
+    justify-content: space-between
+  }
+
+  #b {
+    inset: auto 3px 3px;
+  }
+
+  #t {
+    inset: 3px 3px auto;
   }
 
   b {
-    padding: 4px 8px;
+    padding: 5px;
     border: 1px solid #2c4;
-    cursor: pointer
+    cursor: pointer;
+    display: flex;
+    text-align: center;
+    margin: 4px;
+  }
+
+  #b b {
+    width: 40px;
+    height: 40px;
+    align-items: center;
+    justify-content: center;
   }
 
   b.a {

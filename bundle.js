@@ -25,9 +25,9 @@ const RESERVE = new RegExp('^(' + [
   // canvas / dom element + window + events
   'width', 'height', 'getElementById', 'getContext', 'createElement', 'innerHTML', 'onclick', 'dataset',
   'appendChild', 'remove', 'cssText', 'body', 'opacity',
-  'target', 'style', 'clientX', 'clientY', 'button', 'key', 'shiftKey', 'pointerId',
+  'target', 'style', 'clientX', 'clientY', 'button', 'key', 'shiftKey', 'pointerId', 'pointerType',
   'setPointerCapture', 'releasePointerCapture', 'preventDefault', 'deltaY',
-  'onpointerdown', 'onpointermove', 'onpointerup', 'onpointerleave', 'oncontextmenu',
+  'onpointerdown', 'onpointermove', 'onpointerup', 'onpointercancel', 'onpointerleave', 'oncontextmenu',
   'onwheel',
   // WebAudio
   'createBuffer', 'createBufferSource', 'createGain', 'destination', 'connect',

@@ -160,8 +160,13 @@ const my = (e: { clientY: number }) => e.clientY
 C.onwheel = (e: WheelEvent) => {
   e.preventDefault()
   if (isMenu) return
+  // zoom by the MAGNITUDE of deltaY, not just its sign, so a scroll wheel (few big deltas) and a
+  // touchpad (many small deltas) cover the same total zoom for the same physical scroll. The
+  // exponential (2**x) composes: N small steps == one step of their summed delta. Clamp the
+  // per-event delta so a giant wheel notch can't jump too far.
+  const d = Math.max(-100, Math.min(100, e.deltaY))
   const before = unproject(mx(e), my(e))
-  S.ZOOM = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, S.ZOOM * (e.deltaY < 0 ? 1.02 : 1 / 1.02)))
+  S.ZOOM = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, S.ZOOM * 2 ** (-d * .0022)))
   const after = unproject(mx(e), my(e))
   S.camX += before.x - after.x // keep the world point under the cursor fixed
   S.camY += before.y - after.y
@@ -174,6 +179,11 @@ let downX = 0,
   dragging = false,
   didDrag = false,
   mmDrag = false
+// double-click-and-drag to zoom: a 2nd press within DBL_MS of the last release starts a
+// zoom-drag — dragging up zooms in, down zooms out, about the press point. lastUp = time of the
+// last pointerup; zoomDrag = true while a zoom-drag is in progress; zoomY0 = the press's screen Y.
+let lastUp = -1, zoomDrag = false, zoomY0 = 0
+const DBL_MS = 150
 let chainSrc: Building | null = null // link/tower the current drag started on (drag-to-chain)
 let lastBuilt: { x: number; y: number } | null = null // last spot a drag-line building was placed
 // pressing on an ALREADY-SELECTED tower arms this hold-timer: a long press (500ms) ejects the
@@ -200,6 +210,13 @@ C.onpointerdown = (e: PointerEvent) => {
   // while on the title, clicks never select/build/pan — they only kick off the start
   // transition (once).
   if (isMenu) { if (!trans) trans = 0.0001; return }
+  // DOUBLE-TAP-DRAG ZOOM (touch only — desktop zooms with the scroll wheel): a 2nd press soon
+  // after the last release starts a zoom-drag; the move handler zooms by vertical drag. Bail.
+  if (e.pointerType === 'touch' && performance.now() - lastUp < DBL_MS) {
+    zoomDrag = true; zoomY0 = my(e); downX = mx(e); downY = my(e)
+    C.setPointerCapture(e.pointerId)
+    return
+  }
   downX = mx(e)
   downY = my(e)
   panX = S.camX
@@ -234,6 +251,17 @@ C.onpointerdown = (e: PointerEvent) => {
 }
 C.onpointermove = (e: PointerEvent) => {
   S.mouse = { x: mx(e), y: my(e) }
+  // zoom-drag (from a double-click): vertical movement zooms about the original press point.
+  // Drag UP (y decreasing) zooms in, DOWN zooms out. Re-baseline zoomY0 each move for a smooth
+  // continuous rate.
+  if (zoomDrag) {
+    const dy = zoomY0 - my(e); zoomY0 = my(e)
+    const before = unproject(downX, downY)
+    S.ZOOM = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, S.ZOOM * (1 + dy * .01)))
+    const after = unproject(downX, downY)
+    S.camX += before.x - after.x; S.camY += before.y - after.y // keep the press point fixed
+    return
+  }
   if (!dragging) return
   // sell mode: dragging over buildings demolishes each one it passes
   if (S.mode === 'sell') { sellAt(unproject(mx(e), my(e))); return }
@@ -281,9 +309,9 @@ C.onpointermove = (e: PointerEvent) => {
       S.sel = tgt
     }
   }
-  // a drag that lays a line (build-mode L/T tool) or extends a chain (started on an
-  // existing L/T) does NOT pan the camera — every other drag pans as before.
-  if (didDrag && !lineTool() && !chainSrc) {
+  // a drag that lays a line (build-mode L/T tool) or extends a chain (started on an existing
+  // L/T) does NOT pan — and neither does any drag in BUILD mode (a tool is selected to place).
+  if (didDrag && S.mode !== 'build' && !chainSrc) {
     const dXmZ = dx / S.ZOOM,
       dXpZ = dy / (0.5 * S.ZOOM)
     S.camX = panX - (dXpZ + dXmZ) / 2
@@ -292,26 +320,35 @@ C.onpointermove = (e: PointerEvent) => {
 }
 C.onpointerup = (e: PointerEvent) => {
   if (e.button || isMenu) return // no select/build on release while the title is up
+  C.releasePointerCapture?.(e.pointerId)
+  const now = performance.now()
+  // a zoom-drag ends here; skip normal release logic. Record lastUp either way so the NEXT press
+  // can detect a double-click.
+  if (zoomDrag) { zoomDrag = false; lastUp = now; return }
+  lastUp = now
   dragging = false
   mmDrag = false
   S.chainFrom = null // end any preview line
-  C.releasePointerCapture?.(e.pointerId)
   if (S.mode === 'sell') return // sell happened on down/move; nothing to do on release
   const p = unproject(mx(e), my(e))
-  // any drag (pan, chain-connect, or build-line) did its work live in onpointermove —
-  // nothing to place on release. Only a non-drag click reaches the build/select logic.
-  if (didDrag) return
-  // L/T tools already placed their (single) building on pointerdown — see there.
+  // the LINE tool laid its buildings live during the drag — nothing to commit on release.
   if (lineTool()) { if (!e.shiftKey) S.mode = 'select'; return }
-  zzfx(...miscSounds[0])
+  // BUILD mode (single-building tool): commit at the RELEASE point regardless of drag, so you can
+  // press on a blocked spot, drag to a valid one, and it builds on pointer up (dropped if still
+  // blocked/unaffordable). Build mode doesn't pan, so the drag is purely repositioning.
   if (S.mode === 'build') {
-    if (S.resource < COST[S.tool]) return
-    if (!canPlace(S.tool, p.x, p.y)) return // blocked: would overlap another building/node
+    if (S.resource < COST[S.tool] || !canPlace(S.tool, p.x, p.y)) return // unaffordable or blocked
+    zzfx(...miscSounds[0])
     S.resource -= COST[S.tool]
     S.buildings.push(mkB(S.tool, p.x, p.y, BUILD[S.tool]))
     if (!e.shiftKey) S.mode = 'select' // hold shift to keep placing
     drawUI()
-  } else {
+    return
+  }
+  // select mode: a drag (pan/chain) already did its work live; only a plain click selects.
+  if (didDrag) return
+  zzfx(...miscSounds[0])
+  {
     // a pending tower-hold means this press was a quick CLICK on the already-selected tower
     // (the long-press eject never fired) -> cycle its color order. Consume the click either way.
     if (towerHold != null) {
