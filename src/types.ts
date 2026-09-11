@@ -27,15 +27,14 @@ export interface Building extends Pt {
   // --- upgrade system (towers) ---
   // A tower absorbs colored energy (up to 3 units) as it fires; the ordered colors it holds
   // spell out its spec. cols = absorbed color-indices (0..6) in arrival order; perm = which of
-  // the 6 orderings is currently applied (tap F to cycle). weapon/elem/bonus are DERIVED from
-  // cols[perm] by applyCols(): 1st slot -> weapon, 2nd -> elem, 3rd -> bonus (fewer than 3 held
-  // = partial spec). A tower with <3 cols keeps absorbing colored energy.
-  cols?: number[] // absorbed color-indices in arrival order (length 0..3)
-  perm?: number // 0..5: index into PERMS, the ordering applied to cols (F cycles it)
-  weapon?: number // 0..6 weapon type (derived: cols[perm][0]); undefined = peashooter
-  elem?: number // 0..6 element (derived: cols[perm][1]); undefined = none
-  bonus?: number // 0..6 bonus (derived: cols[perm][2]); undefined = none
+  // weapon/bonus are DERIVED from cols by applyCols(): slot 0 -> weapon, slot 1 -> bonus (tap to
+  // swap which is which). A tower with <2 cols keeps absorbing colored energy.
+  cols?: number[] // absorbed color-indices in arrival order (length 0..2)
+  perm?: number // 0 = as-absorbed, 1 = weapon/bonus swapped
+  weapon?: number // 0..6 weapon type (derived: cols[perm?1:0]); undefined = peashooter
+  bonus?: number // 0..6 bonus type + bullet tint (derived); undefined = none
   beamA?: number // red-laser weapon: continuous-beam intensity 0..1 (ramps up, fades on empty)
+  chainT?: Enemy[] // white chain-laser: enemies zapped near the primary target this tick (side beams)
   load?: number // link: energy units passed through this second (reset each tick); over
   // LINK_MAX it overloads — excess is burned and the link draws red until the next reset
   crystalCol?: number // if set: world color crystal; ORs this color bit into passing energy (4=R,2=G,1=B)
@@ -68,13 +67,8 @@ export interface Enemy extends Pt {
   kx?: number // knockback velocity (world units/sec); decays each frame — a shove, not a teleport
   ky?: number
   // --- element afflictions (each a remaining-seconds timer; 0/undefined = not affected) ---
-  acidT?: number // green acid: damage over time
-  fireT?: number // red fire: dies at 10% hp; explodes on death
-  wetT?: number // blue water: takes +10% damage
-  stunT?: number // yellow lightning: can't move (re-applied on each hit while affected)
-  slowT?: number // cyan cold: movement halved (also legacy slow-rocket)
-  arcT?: number // magenta arcane: damage taken is shared to nearby arcane-affected enemies
-  convT?: number // white converted: flees its target instead of advancing
+  slowT?: number // cyan bonus: movement halved (also legacy slow-rocket)
+  dotT?: number // magenta bonus: damage over time
 }
 // a flying projectile from a tower (bullets & rockets; lasers are instant beams, no shot).
 export interface Shot extends Pt {
@@ -92,7 +86,7 @@ export interface Shot extends Pt {
   slow?: number // seconds of slow this rocket applies on hit (slow-rocket variant)
   big?: boolean // long-range rocket (faster; drawn a touch larger)
   col: string // "r,g,b" tint for the orb, its trail, and (rockets) the explosion
-  elem?: number // the firing tower's element (0..6), applied to enemies this shot damages
+  elem?: number // the firing tower's BONUS color (0..6), carrying its affliction to enemies hit
   sz?: number // visual size multiplier for the drawn orb (flamethrower puffs are big)
   pierce?: number // railgun: hits remaining before the shot is consumed (passes through enemies)
   bounce?: number // bouncing shot: bounces remaining (redirected to a new enemy on each hit)

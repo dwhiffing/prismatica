@@ -4,7 +4,6 @@ export const buildingProgressSound = (freq = 100) => [.15,,freq,,,.02,,3.5,-33,,
 export const placeBuildingSound = [3,,80,.01,.13,.01,1,2,-1,,,,,,,,,.5]
 export const completeBuildingSound = [1.5,,188,.02,.1,.11,1,,-3,,,,,1.9,2.3,.1,,.62,.01,,1162]
 export const mineSound = [.4,0,0,,.4,1,2,.5,,-30,,,,,,1,,.3,,,-3e3]
-// export const completeBuildingSound = [2.1,,100,.02,.01,.009,,2.1,,64,-481,.02,,,.2,.3,.1,.92,.01,.17]
 
 export const convertEnergySound = [1.1,,794,.02,.03,.007,3,4.6,,25,,,,,11,,.29,.52,.02,,-1337]
 export const buildingDestroySound = [2,,13,.02,.01,.02,4,1.6,-72,,179,.05,.01,,6.5,.2,.11,.83,.04]
@@ -17,12 +16,10 @@ export const deselectBuildingTypeSound = [2,,50,,.01,.04,,3.3,,,,,,.9,,,,.82,.03
 export const selectBuildingSound = [1,.1,170,,.01,.04,,3,2,,,,,.1,,.2,,.5]
 export const deselectBuildingSound = [.4,.1,500,,,.01,,,,,,,,,11,,,,.01]
 
-// export const clickSound = [3,,50,,.01,.05,,3,,,,,,4,,,,.5]
-
 export const towerEjectEnergySound = [1.1,,149,,.02,.05,3,4.7,,,-113,,,,,,.12,.94,.15,,-756]
 export const towerAbsorbEnergySound = [,,10,,.01,.01,,1.76,92,-1,,,,.6,-6.7,,,.42,.01]
-export const laserSound = [.2,0,0,,.5,1,,.5,,-300,,,,,,.5,,.3,,,-4e3]
-export const coneSound = [.05,.4,90,.1,.3,,4,3.9,,,,,,,,.9]
+export const laserSound = [.5,0,0,,.5,1,,.5,,-300,,,,,,.5,,.3,,,-4e3]
+export const coneSound = [.07,.4,90,.1,.3,,4,3.9,,,,,,,,.9]
 export const enemyDestroySound = [10,,6e3,,.05,.2,4,6,,,,,,,,.1,,.5,,,-800]
 export const basicShootSound = [.3,,600,,,.05,1,1.8,-15,24,,,,.8,,,,.69,.05];
 export const mgShootSound = [.2,,250,,,.05,1,1.8,-15,24,,,,.8,,,,.69,.05]
@@ -30,9 +27,8 @@ export const railShootSound = [.3,,600,,,.05,1,1.8,-15,24,,,,.8,,,,.69,.05];
 export const rocketShootSound = [.3,,600,,,.05,1,1.8,-15,24,,,,.8,,,,.69,.05];
 export const bounceShootSound = [.3,,600,,,.05,1,1.8,-15,24,,,,.8,,,,.69,.05];
 export const basicHitSound = [.5,0,0,,.03,.03,5,0,1,,,,,,38,.1,,.5,,,-2e3];
-// export const enemyDestroySound = [2,,13,.02,.01,.02,4,1.6,-72,,179,.05,.01,,6.5,.2,.11,.83,.04]
 
-export const energyLossSound = [2,,100,.02,,.007,4,4.4,,,-131,.01,,,,,.04,.54,,.07]
+export const energyConvertSound = [1.1,,122,.01,.03,.03,3,.4,,,,,,.1,,,.07,.87,,.04,-854]
 export const gameOverSound = [1.8,,841,.14,,.12,1,1.8,,45,79,.03,.12,,.5,,.45,.82,.33,,-1445]
 
 // export const miscSounds = [

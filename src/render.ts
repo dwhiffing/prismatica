@@ -42,14 +42,11 @@ const escale = (e: Enemy) => ESCALE[e.k || 0]
 // own E2..E4. (All are clones of E for now — differentiate the model data in models.ts.)
 const EMODEL = ['E', 'E', 'E2', 'E3', 'E4', 'E'] as const
 const emodel = (e: Enemy) => ENTITIES[EMODEL[e.k || 0]]
-// tint an enemy's whole body (like an element effect). A live shield wins — a pale steel-cyan
-// '#bdf' distinct from the cold element's saturated cyan — else the active element affliction;
-// none = base color. The cyan shield HP-bar layer disambiguates shield from the cold element.
+// tint an enemy's whole body. A live shield wins (bright cyan), else the active bonus affliction:
+// slowed (steel-blue) or damage-over-time (magenta); none = base color.
 const enemyTint = (e: Enemy) =>
   e.sh! > 0 ? '#4ff'
-    : e.fireT! > 0 ? '#f52' : e.acidT! > 0 ? PIPCOL[0] : e.stunT! > 0 ? PIPCOL[3]
-    : e.slowT! > 0 ? '#34abeb' : e.convT! > 0 ? PIPCOL[6] : e.arcT! > 0 ? PIPCOL[5]
-    : e.wetT! > 0 ? PIPCOL[2] : undefined
+    : e.slowT! > 0 ? '#34abeb' : e.dotT! > 0 ? PIPCOL[5] : undefined
 // strength (0..1) of an enemy's body tint. Shield tint fades with remaining shield HP —
 // 25% floor as soon as sh>0, up to full at max shield — so a nearly-broken shield reads faint.
 const enemyTintA = (e: Enemy) => e.sh! > 0 ? .25 + .75 * e.sh! / e.sh0! : 1
@@ -338,12 +335,11 @@ export function render() {
           const [sx, sy] = iso(b.x, 0, b.y)
           X.fillStyle = b.crystalCol === 4 ? '#f66' : b.crystalCol === 2 ? '#6f6' : '#66f'
           X.beginPath(); X.arc(sx, sy, 3, 0, 7); X.fill()
-        } else if (b.t === 'T') { // any tower: 3 SPEC dots (downward triangle) — empty slots white border
-          const [sx, sy] = iso(b.x, 20, b.y), orbs = [b.weapon, b.bonus, b.elem] // absorption order: weapon, bonus, element
-          // slot 0/1 on top (left/right), slot 2 centered below (same style as the selected-tower pips)
-          const pos: [number, number][] = [[-5, -5], [5, -5], [0, 5]]
+        } else if (b.t === 'T') { // any tower: 2 SPEC dots (weapon | bonus) — empty slots white border
+          const [sx, sy] = iso(b.x, 20, b.y), orbs = [b.weapon, b.bonus]
+          const pos: [number, number][] = [[-5, 0], [5, 0]]
           X.lineWidth = 1
-          for (let i = 0; i < 3; i++) {
+          for (let i = 0; i < 2; i++) {
             const x = sx + pos[i][0] - 3, y = sy + pos[i][1] - 3
             if (orbs[i] != null) { X.fillStyle = PIPCOL[orbs[i]!]; X.fillRect(x, y, 6, 6) }
             else { X.strokeStyle = '#fff'; X.strokeRect(x + .5, y + .5, 5, 5) }
@@ -390,14 +386,12 @@ export function render() {
     for (const b of buildings)
       if (b.bp == null && onScreen(b))
         entityFaces(ENTITIES[b.ek ?? b.t], b.x, b.y, 1, faces,
-          // overloaded link flashes red; a link is tinted yellow. A TOWER tints per spline: spline 0
-          // by its ELEMENT color (2nd orb), spline 1 by its WEAPON color (1st orb); further splines
-          // keep their own color. Others: own color.
+          // overloaded link flashes red; a link is tinted yellow. A TOWER is always GREY at its base
+          // (spline 0); its head (spline 1) is tinted by the WEAPON color, darkened when unpowered.
           b.crystalCol != null ? (b.crystalCol === 4 ? '#f66' : b.crystalCol === 2 ? '#6f6' : '#66f')
             : b.load! > LINK_MAX ? '#f33'
             : b.t === 'L' ? '#ee4'
-            // spline 0 = element color, darkened (50% brightness); spline 1 = weapon color
-            : b.t === 'T' ? [b.elem != null ? mixHex(PIPCOL[b.elem], '#000', .5) : undefined, mixHex(b.weapon != null ? PIPCOL[b.weapon] : '#ffc88c', '#000', canFireE(b) ? 1 : .35)] : undefined,
+            : b.t === 'T' ? ['#888', mixHex(b.weapon != null ? PIPCOL[b.weapon] : '#ffc88c', '#000', canFireE(b) ? 1 : .35)] : undefined,
           b.t === 'M' && starved(b) ? '#a4f' : undefined, b.ry)
     for (const e of enemies)
       // fast enemies face their heading (e.face); all others spin (spin·t).
@@ -506,13 +500,16 @@ export function render() {
   // alpha and the muzzle/impact glow.
   for (const b of buildings)
     if (b.t === 'T' && b.beamA && b.beamA > 0.01 && b.fx) {
-      const hex = b.elem != null ? PIPCOL[b.elem] : '#ffc88c' // uncolored-energy color when no element
-      const rgb = b.elem != null ? PIPRGB[b.elem] : '255,200,140'
+      const hex = b.bonus != null ? PIPCOL[b.bonus] : '#ffc88c' // bonus color tints the beam; else uncolored
+      const rgb = b.bonus != null ? PIPRGB[b.bonus] : '255,200,140'
       const [ax, ay] = g(b.x, b.y, 20), [bx, by] = g(b.fx.x, b.fx.y, 7)
       X.strokeStyle = hex; X.lineWidth = 4; X.globalAlpha = b.beamA
       glow(ax, ay, rgb, b.beamA, 1.3) // muzzle glow
       beam(ax, ay, bx, by)
       glow(bx, by, rgb, b.beamA, 0.8) // impact flare
+      // chain laser: the beam WALKS from link to link — primary -> A -> B -> ... — so draw each
+      // segment from the previous point to the next, thinner than the main beam.
+      if (b.chainT) { X.lineWidth = 2; let px = bx, py = by; for (const o of b.chainT) { const [cx, cy] = g(o.x, o.y, 7); beam(px, py, cx, cy); glow(cx, cy, rgb, b.beamA, 0.6); px = cx; py = cy } }
     }
   X.globalAlpha = 1
   X.lineWidth = 2
@@ -567,21 +564,18 @@ export function render() {
       X.fillStyle = '#960'; X.fillRect(bx, cy, 14, 3)                 // dark track (20% lighter than #430)
       X.fillStyle = '#fe4'; X.fillRect(bx, cy, 14 * b.e / CHARGE, 3)     // yellow energy
     }
-  // spec pips: 3 slots above the SELECTED tower (only) showing its absorbed colors. Each FILLED
-  // slot (weapon / element / bonus, in the tower's current perm order) is tinted by that color;
-  // empty slots are gray. Tapping F reorders which color sits in which. (Zoomed-out DOTS mode
-  // shows a tower's colors via its dot instead, so pips are hidden there.)
+  // spec pips: 2 slots above the SELECTED tower (only) — weapon | bonus, tinted by each color;
+  // empty slots draw a white outline. Tapping swaps which color is weapon vs bonus. (Zoomed-out
+  // DOTS mode shows a tower's colors via its dot instead, so pips are hidden there.)
   X.globalAlpha = 1 // reset: prior particle/pulse glows leave alpha <1, which would blink the pips
   {
     const b = S.sel
     if (!DOTS && b && b.t === 'T' && b.bp == null) {
-      const orbs = [b.weapon, b.bonus, b.elem] // absorption order: weapon, bonus, element (undefined = empty)
+      const orbs = [b.weapon, b.bonus] // weapon | bonus (undefined = empty)
       const [cx, cy] = g(b.x, b.y, 30)
-      // downward triangle: slots 0/1 on top, 2 below-center. Filled slots draw solid in their
-      // color; empty slots draw as a white outline (border) instead.
-      const pos: [number, number][] = [[-5, -5], [5, -5], [0, 5]]
+      const pos: [number, number][] = [[-5, 0], [5, 0]]
       X.lineWidth = 1
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < 2; i++) {
         const x = cx + pos[i][0] - 3, y = cy + pos[i][1] - 3
         if (orbs[i] != null) { X.fillStyle = PIPCOL[orbs[i]!]; X.fillRect(x, y, 6, 6) }
         else { X.strokeStyle = '#fff'; X.strokeRect(x + .5, y + .5, 5, 5) } // empty: white border

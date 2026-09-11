@@ -13,7 +13,7 @@ const RESERVE = new RegExp('^(' + [
   // Math / Array / String / Object builtins
   'length', 'min', 'max', 'abs', 'sin', 'cos', 'tan', 'atan2', 'sqrt', 'hypot', 'sign', 'floor',
   'round', 'ceil', 'PI', 'SQRT2', 'random', 'from', 'push', 'pop', 'map', 'filter',
-  'some', 'find', 'findIndex', 'sort', 'includes', 'slice', 'indexOf', 'set',
+  'some', 'find', 'findIndex', 'sort', 'includes', 'slice', 'splice', 'indexOf', 'set',
   'forEach', 'split', 'join', 'concat', 'reverse', 'get', 'toString', 'isArray', // Array/String/WeakMap methods
   // canvas 2d context + gradients/patterns
   'fillStyle', 'strokeStyle', 'lineWidth', 'globalAlpha', 'globalCompositeOperation',
