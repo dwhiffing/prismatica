@@ -1,6 +1,7 @@
 import {
   BUILD,
   COST,
+  DEV_SKIP_TITLE,
   LINK_RANGE,
   MAX_ZOOM,
   MIN_ZOOM,
@@ -110,7 +111,8 @@ function reset() {
   S.enemies = []; S.pulses = []; S.parts = []; S.shots = []; S.emits = []; S.resource = 70; S.t = 0
   S.wave = 0; S.queue = []; S.spawnT = 0; S.won = 0
   SPAWN.x = V.W / 2; SPAWN.y = V.Hh / 2; S.camX = SPAWN.x; S.camY = SPAWN.y
-  LT.dayT = .35; 
+  S.ZOOM = MAX_ZOOM // start fully zoomed in
+  LT.dayT = .35;
   S.buildings = [mkB('S', SPAWN.x - 35, SPAWN.y), mkB('S', SPAWN.x + 35, SPAWN.y),
     ...[0, 1, 2].map((i) => { const a = -Math.PI / 2 + (i * Math.PI * 2) / 3; return mkB('L', SPAWN.x + Math.cos(a) * 22, SPAWN.y + Math.sin(a) * 22) })]
   S.nodes = []
@@ -192,9 +194,10 @@ let lastBuilt: { x: number; y: number } | null = null // last spot a drag-line b
 let towerHold: ReturnType<typeof setTimeout> | null = null
 // place one building of the current tool if affordable and not blocked; true if placed
 const tryBuild = (x: number, y: number, shift = true) => {
-  if (S.resource < COST[S.tool] || !canPlace(S.tool, x, y)) return false
-  S.resource -= COST[S.tool]
-  S.buildings.push(mkB(S.tool, x, y, BUILD[S.tool]))
+  const free = DEVTOOLS && S.free // dev free mode: no cost, instant build
+  if ((!free && S.resource < COST[S.tool]) || !canPlace(S.tool, x, y)) return false
+  if (!free) S.resource -= COST[S.tool]
+  S.buildings.push(mkB(S.tool, x, y, free ? undefined : BUILD[S.tool])) // bp undefined = finished instantly
   if (!shift) S.mode = 'select' // hold shift to keep placing
   zzfx(...placeBuildingSound)
   drawUI()
@@ -436,9 +439,9 @@ function loop(now: number) {
     if ((relayT -= dt) <= 0) { relayT = .1; S.buildings.forEach((b) => b.emit && relay(b, 0)) }
     if ((enemyT -= dt) <= 0) { enemyT = .8; spawnEnemy() }
   }
-  // GAME OVER: once in-game, if the player has lost every building they own (only the
-  // indestructible color crystals remain), snap straight back to the title — no fade.
-  if (!isMenu && !trans && !S.buildings.some((b) => b.crystalCol == null)) {
+  // END OF GAME: back to the title once in-game and either WON (cleared the final wave) or LOST
+  // (every player building destroyed — only indestructible color crystals remain).
+  if (!isMenu && !trans && (S.won || !S.buildings.some((b) => b.crystalCol == null))) {
     H.innerHTML = '' // hide the toolbar/HUD
     toTitle()
   }
@@ -458,7 +461,7 @@ function loop(now: number) {
 // SKIPTITLE (injected by bundle.js): true in dev to boot straight into the game, skipping the
 // title/menu. Injected as a literal so the dead branch folds away entirely in release.
 declare const SKIPTITLE: boolean
-if (SKIPTITLE) { isMenu = false; LT.dayT = .35; reset(); drawUI() }
+if (SKIPTITLE && DEV_SKIP_TITLE) { isMenu = false; LT.dayT = .35; reset(); drawUI() }
 else titleScreen()
 requestAnimationFrame(loop)
 // dev: expose reset() on window as regen() to re-run world generation from the console
@@ -476,6 +479,8 @@ if (DEVTOOLS) {
   addEventListener('keydown', (ev: KeyboardEvent) => {
     // Tab: jump to the next wave (spawns its roster immediately)
     if (ev.key === 'Tab') { ev.preventDefault(); startWave(S.wave + 1); return }
+    if (ev.key === '.') { S.noFog = S.noFog ? 0 : 1; return } // toggle fog of war
+    if (ev.key === ',') { S.free = S.free ? 0 : 1; return } // toggle free mode (free + instant builds)
     if (!S.mouse) return
     const w = unproject(S.mouse.x, S.mouse.y)
     // 'z x c v b n': spawn enemy kind 0..5 (normal/shield/shielder/fast/summoner/boss) at cursor

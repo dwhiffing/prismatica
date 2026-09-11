@@ -30,7 +30,7 @@ H.onclick = (e: MouseEvent) => {
   if (!k) return // readouts / gaps have no data-t
    // cycle speed
   if (k === 's') {
-    S.speed = (S.speed+1) % 4
+    S.speed = (S.speed+1) % 6 // 0(paused),1,2,3,4,5x
     zzfx(...changeSpeedSound(140+S.speed*140)) // deselect sound
   }
   else if (k === 'd') {

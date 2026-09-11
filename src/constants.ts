@@ -37,14 +37,17 @@ export const R: Record<EType, number> = {
   N3: 4,
   E: 5, E2: 5, E3: 5, E4: 5 // enemy kinds share a collision radius
 } // pick/collision radii
-export const COST: Record<BType, number> = { S: 40, L: 5, M: 15, T: 1 } // resource cost to place
-export const BUILD: Record<BType, number> = { S: 25, L: 2, M: 8, T: 1 } // energy to construct
+export const COST: Record<BType, number> = { S: 40, L: 5, M: 15, T: 20 } // resource cost to place
+export const BUILD: Record<BType, number> = { S: 25, L: 2, M: 8, T: 12 } // energy to construct
 export const CHARGE = 5 // energy a miner/tower stores at full charge
 export const TOWER_GAIN = .5 // power a tower gains per delivered energy unit (so it takes several)
 export const NODE_AMT = 250 // starting resources in a crystal node
 export const ENEMIES = true // master switch: set false to disable enemy spawns
+// DEV ONLY: set false to boot to the TITLE even in a dev build (overrides SKIPTITLE). No effect on
+// release, which always shows the title. Flip this instead of editing bundle.js.
+export const DEV_SKIP_TITLE = false
 export const ESPEED = 5 // enemy speed px/s
-export const SHIELDER_RANGE = 40 // shielder (kind 2): radius it regens shields on nearby enemies
+export const SHIELDER_RANGE = 60 // shielder (kind 2): radius it regens shields on nearby enemies
 // --- waves ---
 export const WAVE1_DELAY = 60 // seconds of grace before wave 1 spawns
 export const WAVE_WIN = 50 // clear this many waves to win

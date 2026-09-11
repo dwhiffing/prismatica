@@ -168,14 +168,15 @@ function updateWaves(dt: number) {
     if (S.t >= WAVE1_DELAY) startWave(1)
     return
   }
+  S.peak = Math.max(S.peak, S.enemies.length) // track the wave's high-water enemy count
   // drain the spawn queue at a steady cadence
   if (S.queue.length) {
     if ((S.spawnT -= dt) <= 0) { S.spawnT = SPAWN_GAP; spawnEnemy(S.queue.pop()) }
     return
   }
-  // queue empty + board clear -> advance (or win after the final wave)
-  if (!S.enemies.length) {
-    if (S.wave >= WAVE_WIN) S.won = 1
+  // queue empty and ≥50% of the wave's peak is dead (living <= floor(50% of peak)) -> advance/win.
+  if (S.enemies.length <= Math.floor(S.peak * .5)) {
+    if (S.wave >= WAVE_WIN) { if (!S.enemies.length) S.won = 1 } // final wave must be fully cleared to win
     else startWave(S.wave + 1)
   }
 }
@@ -183,6 +184,7 @@ export function startWave(n: number) {
   S.wave = n
   S.queue = waveRoster(n)
   S.spawnT = 0 // first enemy spawns right away
+  S.peak = 0 // reset the high-water count for the new wave
 }
 
 // per-kind base stats: [hp, shield, speed, mass]. kind 0 normal .. 5 boss. A shield enemy carries
@@ -192,21 +194,21 @@ export function startWave(n: number) {
 const EKIND: [number, number, number, number][] = [
   [12, 0, ESPEED, 1],       // 0 normal
   [12, 6, ESPEED, 1.5],     // 1 shield (12 base hp + a 6 shield; heavier with its shield)
-  [40, 0, ESPEED * .4, 3],  // 2 shielder (high hp)
+  [80, 0, ESPEED * .4, 3],  // 2 shielder (high hp)
   [2, 0, ESPEED * 2.2, .5], // 3 fast (light — flies far when hit)
   [16, 0, ESPEED * .5, 3],  // 4 summoner
-  [240, 0, ESPEED * .5, 7], // 5 boss (barely shoved)
+  [800, 0, ESPEED * .5, 7], // 5 boss (barely shoved)
 ]
 // TODO: tweak me
 // kind, starting from wave, base count, per wave increment
 // kinds: 0 normal, 1 shield, 2 shielder, 3 fast(swarm), 4 summoner, 5 boss.
 const WAVES: [number, number, number, number][] = [
-  [0, 1, 3, .6],   // normals — the staple, always present, grows steadily
-  [3, 2, 1, .5],   // fast swarms from wave 2 (each spawns 4)
-  [1, 4, 1, .35],  // shielded from wave 4
-  [2, 6, 1, .2],   // shielders from wave 6
-  [4, 9, 1, .15],  // summoners from wave 9
-  [5, 12, 1, .1],  // bosses from wave 12 (rare, slow ramp)
+  [0, 1, 1, .75],   // normals — the staple, always present, grows steadily
+  [1, 15, 1, .75],  // shielded from wave 4
+  [3, 20, 1, .25],   // fast swarms from wave 2 (each spawns 4)
+  [2, 25, 1, .25],   // shielders from wave 6
+  [4, 35, 1, .25],  // summoners from wave 9
+  [5, 50, 1, 0],  // boss on wave 50 (rare, slow ramp)
 ]
 // build the list of enemy kinds to spawn for wave `n` (n >= 1), from the WAVES table.
 function waveRoster(n: number): number[] {
@@ -218,7 +220,15 @@ function waveRoster(n: number): number[] {
 // spawn an enemy of kind `k` at a random point on the ring (or at x,y if given, e.g. summons).
 export function spawnEnemy(k = 0, x?: number, y?: number) {
   const [hp, sh, spd] = EKIND[k]
-  if (x == null) { const a = rnd() * Math.PI * 2; x = SPAWN.x + Math.cos(a) * 500; y = SPAWN.y + Math.sin(a) * 500 }
+  if (x == null) {
+    // spawn on a ring just OUTSIDE the player's reach: the furthest PLAYER building (solar/link/
+    // miner/tower — NOT the scattered color crystals) from the origin, plus a 200-unit margin
+    // (min 500 so an empty/tight base still spawns them off-screen).
+    let far = 200
+    for (const b of S.buildings) if (b.crystalCol == null) far = Math.max(far, Math.hypot(b.x - SPAWN.x, b.y - SPAWN.y))
+    const a = rnd() * Math.PI * 2, r = far + 150
+    x = SPAWN.x + Math.cos(a) * r; y = SPAWN.y + Math.sin(a) * r
+  }
   const swarm = k === 3 ? 4 : 1 // fast enemies come in swarms
   for (let i = 0; i < swarm; i++)
     S.enemies.push({ x: x + (i ? (rnd() - .5) * 30 : 0), y: y! + (i ? (rnd() - .5) * 30 : 0),
@@ -625,7 +635,7 @@ export function stepSim(dt: number) {
     // particles in that bonus's color that float up and fade (tuple's 8th slot = rise flag).
     const aff = e.slowT! > 0 ? 4 : e.dotT! > 0 ? 5 : -1
     if (aff >= 0 && rnd() < dt * 8)
-      S.parts.push([e.x + (rnd() - .5) * 8, e.y + (rnd() - .5) * 8, 0, 0, 1, ECOL[aff], aff === 5 ? 1 : .5, 1]) // DoT particles 2x larger
+      S.parts.push([e.x + (rnd() - .5) * 8, e.y + (rnd() - .5) * 8, 0, 0, 1, ECOL[aff === 4 ? 2 : aff], aff === 5 ? 1 : .5, 1]) // slow=blue tint; DoT particles 2x larger
     // SHIELDER (k=2): regenerate shields on nearby normal/shield/fast enemies (granting one to
     // those that have none) up to a shield-enemy's max (EKIND[1][1]). Skips shielders/summoners/boss.
     if (e.k === 2) for (const o of S.enemies) if ((o.k! < 2 || o.k === 3) && !(o.hurtT! > 0) && near(e, o, SHIELDER_RANGE) && (o.sh || 0) < EKIND[1][1]) {

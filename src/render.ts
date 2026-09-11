@@ -25,6 +25,7 @@ import { drawThreat } from './threat'
 declare const MINIMAP: boolean
 // fog-of-war toggle, injected by bundle.js. As a literal, the whole fog pass DCEs when off.
 declare const FOG: boolean
+declare const DEVTOOLS: boolean // dev builds only: debug toggles (folds to false + DCEs in release)
 import { ENTITIES, type Entity } from './models'
 import { LT, S, SUN, V, X } from './state'
 import { canFireE, wepRng } from './sim'
@@ -46,7 +47,7 @@ const emodel = (e: Enemy) => ENTITIES[EMODEL[e.k || 0]]
 // slowed (steel-blue) or damage-over-time (magenta); none = base color.
 const enemyTint = (e: Enemy) =>
   e.sh! > 0 ? '#4ff'
-    : e.slowT! > 0 ? '#34abeb' : e.dotT! > 0 ? PIPCOL[5] : undefined
+    : e.slowT! > 0 ? PIPCOL[2] : e.dotT! > 0 ? PIPCOL[5] : undefined
 // strength (0..1) of an enemy's body tint. Shield tint fades with remaining shield HP —
 // 25% floor as soon as sh>0, up to full at max shield — so a nearly-broken shield reads faint.
 const enemyTintA = (e: Enemy) => e.sh! > 0 ? .25 + .75 * e.sh! / e.sh0! : 1
@@ -335,20 +336,21 @@ export function render() {
           const [sx, sy] = iso(b.x, 0, b.y)
           X.fillStyle = b.crystalCol === 4 ? '#f66' : b.crystalCol === 2 ? '#6f6' : '#66f'
           X.beginPath(); X.arc(sx, sy, 3, 0, 7); X.fill()
-        } else if (b.t === 'T') { // any tower: 2 SPEC dots (weapon | bonus) — empty slots white border
-          const [sx, sy] = iso(b.x, 20, b.y), orbs = [b.weapon, b.bonus]
-          const pos: [number, number][] = [[-5, 0], [5, 0]]
-          X.lineWidth = 1
-          for (let i = 0; i < 2; i++) {
-            const x = sx + pos[i][0] - 3, y = sy + pos[i][1] - 3
-            if (orbs[i] != null) { X.fillStyle = PIPCOL[orbs[i]!]; X.fillRect(x, y, 6, 6) }
-            else { X.strokeStyle = '#fff'; X.strokeRect(x + .5, y + .5, 5, 5) }
-          }
+        } else if (b.t === 'T') { // tower: a circle filled in the WEAPON color (peashooter = smaller
+          // orange-yellow), ringed in the BONUS color when it has one.
+          const [sx, sy] = iso(b.x, 20, b.y), r = b.weapon != null ? 8 : 5
+          X.beginPath(); X.arc(sx, sy, r, 0, 7)
+          X.fillStyle = b.weapon != null ? PIPCOL[b.weapon] : '#fb4'; X.fill()
+          if (b.bonus != null) { X.lineWidth = 3; X.strokeStyle = PIPCOL[b.bonus]; X.stroke() }
         } else
-          dot(b.x, b.y, b.t === 'S' ? '#a4f' : b.t === 'L' ? '#ff4' : b.t === 'M' ? '#4f8' : '#F84', b.t === 'S' ? 2 : b.t === 'M' ? 1.5 : 1, b.t === 'L' || b.t === 'M' ? 8 : 0) // solars 2x; miners 1.5x; links+miners lifted
+          dot(b.x, b.y, b.t === 'S' ? '#a4f' : b.t === 'L' ? '#ff4' : b.t === 'M' ? '#4f8' : '#F84', b.t === 'S' ? 3.2 : b.t === 'M' ? 1.5 : 1, b.t === 'L' || b.t === 'M' ? 8 : 0) // solars 3.2x; miners 1.5x; links+miners lifted
       }
-    for (const e of enemies) // enemies: a 45°-rotated square (diamond)
-      if (onScreen(e)) { const [sx, sy] = iso(e.x, 0, e.y), r = 2.5; X.fillStyle = '#f00'; X.save(); X.translate(sx, sy); X.rotate(Math.PI / 4); X.fillRect(-r, -r, r * 2, r * 2); X.restore() }
+    // enemies: a 45°-rotated red diamond that blinks (opacity pulses) to draw the eye out here.
+    X.fillStyle = '#f00'
+    X.globalAlpha = .55 + .45 * Math.sin(S.t * 6) // blink 0.1..1
+    for (const e of enemies)
+      if (onScreen(e)) { const [sx, sy] = iso(e.x, 0, e.y), r = 5; X.save(); X.translate(sx, sy); X.rotate(Math.PI / 4); X.fillRect(-r, -r, r * 2, r * 2); X.restore() }
+    X.globalAlpha = 1
   } else {
     // cast drop shadows: collect every silhouette into ONE path, then fill once so
     // cast drop shadows: collect every silhouette into ONE path, then fill once so
@@ -474,7 +476,7 @@ export function render() {
   // energy pulses: colored glowing orbs — color encodes the energy's RGB bitmask.
   // Index 0 = uncolored (warm dim white), 1-7 = B/G/GB/R/RB/RG/RGB via bitmask.
   const PCOLS = [
-    ['255,200,140', 1, 0.4], // 0: uncolored (~44% more transparent than colored)
+    ['255,200,140', 1, 0.55], // 0: uncolored (~44% more transparent than colored)
     ['20,90,255', 1, 1],     // 1: B
     ['62,255,62', 1, 1],     // 2: G
     ['0,255,255', 1, 1],     // 3: GB/cyan
@@ -559,7 +561,7 @@ export function render() {
   // you can watch it charge (and lasers show their drain/recharge as they fire).
   X.globalAlpha = 1
   for (const b of buildings)
-    if (b.t === 'T' && b.bp == null && b.e < CHARGE && onScreen(b)) {
+    if (!DOTS && b.t === 'T' && b.bp == null && b.e < CHARGE && onScreen(b)) {
       const [cx, cy] = g(b.x, b.y, 26), bx = cx - 7
       X.fillStyle = '#960'; X.fillRect(bx, cy, 14, 3)                 // dark track (20% lighter than #430)
       X.fillStyle = '#fe4'; X.fillRect(bx, cy, 14 * b.e / CHARGE, 3)     // yellow energy
@@ -615,7 +617,7 @@ export function render() {
   // fog of war: one dark shape covering the screen with a circular CUTOUT at each
   // building, filled even-odd so the already-drawn world shows through the holes and only
   // the unrevealed area is darkened. REVEAL is a world distance, so scale by zoom.
-  if (FOG) {
+  if (FOG && !(DEVTOOLS && S.noFog)) {
     // Fog of war tied to LIVING buildings: each frame, punch a soft circular cutout at every
     // finished building's current position out of a black offscreen buffer (destination-out, so
     // overlaps merge cleanly), then blit it over the scene. Sight follows your buildings — sell
@@ -625,9 +627,9 @@ export function render() {
     FX.fillStyle = '#000'
     FX.fillRect(0, 0, V.W, V.Hh)
     FX.globalCompositeOperation = 'destination-out'
-    const rr = REVEAL * S.ZOOM
     for (const b of buildings) {
       if (b.bp != null || b.crystalCol != null) continue // skip under-construction + color crystals
+      const rr = REVEAL * S.ZOOM * (b.t === 'T' ? 1.25 : 1) // towers see 25% further
       const [sx, sy] = iso(b.x, 0, b.y)
       const gr = FX.createRadialGradient(sx, sy, 0, sx, sy, rr)
       gr.addColorStop(0, '#000'); gr.addColorStop(1, 'rgba(0,0,0,0)')

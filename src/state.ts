@@ -42,8 +42,11 @@ export const S = {
   wave: 0, // current wave: 0 = pre-game (grace period), 1..WAVE_WIN in progress, WAVE_WIN+ = won
   queue: [] as number[], // enemy kinds still to spawn in the current wave (drained a few/sec)
   spawnT: 0, // spawn-pacing accumulator (seconds; spawns one queued enemy each SPAWN_GAP)
+  peak: 0, // peak living-enemy count this wave; next wave starts once ≥75% of that peak is dead
   won: 0, // set to 1 once the final wave is cleared (drives the win banner / end)
-  speed: 1, // game-speed multiplier from the HUD time controls: 0=paused, .5, 1, 2, 3
+  noFog: 0, // DEVTOOLS: 1 = fog-of-war overlay hidden (toggled with '.')
+  free: 0, // DEVTOOLS: 1 = free mode — buildings cost nothing and build instantly (toggled with ',')
+  speed: 1, // game-speed multiplier from the HUD time controls: 0=paused, 1, 2, 3, 4, 5
   t: 0, // elapsed seconds
   ZOOM: INIT_ZOOM, // camera zoom (scroll wheel to change; clamped MIN_ZOOM..MAX_ZOOM)
   camX: 0,
