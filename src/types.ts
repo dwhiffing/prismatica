@@ -22,6 +22,7 @@ export interface Building extends Pt {
   mp?: number // miner: phase timer
   sh?: number // miner: shots left on the current energy charge
   ni?: number // round-robin index for cycling through neighbors when relaying energy
+  sk?: number // solar night-halving toggle: emits only on ticks where this flips to 1
   route?: Building | null // forced relay target (set via 'z'); overrides round-robin
   // --- upgrade system (towers) ---
   // A tower absorbs colored energy (up to 3 units) as it fires; the ordered colors it holds
@@ -41,7 +42,6 @@ export interface Building extends Pt {
   csz?: number // color crystal size 1..3 = colorings left; each successful recolor decrements it
   // (and steps the model N->N2->N3); at 0 the crystal is depleted and removed.
   ek?: EType // entity model override (color crystals render a crystal model, stepped by size)
-  filt?: number // link color filter: 0=any(yellow), else only energy with this bit (4=R,2=G,1=B)
   drain?: number // title menu only: energy arriving here is consumed (never forwarded/bounced)
   emit?: number // title menu only: this dot is its letter's sole energy source (see spray)
   ry?: number // random Y rotation (radians) so towers don't all face the same way
@@ -98,6 +98,7 @@ export interface Shot extends Pt {
   bounce?: number // bouncing shot: bounces remaining (redirected to a new enemy on each hit)
   straight?: boolean // grenade: an explosive shot that flies straight (no homing) then detonates
   hits?: Enemy[] // piercing shot: enemies already damaged, so it hits each only once
+  shieldMul?: number // how hard this shot hits shields (pea/MG .25 weak; others 1 normal). default 1
 }
 export interface Pulse {
   x: number
@@ -108,7 +109,8 @@ export interface Pulse {
   len: number // world length of the hop (for constant-speed travel)
   dst: Building // the node this pulse is arriving at (routed further, or consumed)
   col: number // energy color bitmask (4=R,2=G,1=B; 0=uncolored)
-  avoid?: Building // a building the next relay must not deliver to (pushes ejected energy away)
+  avoid?: Building // a building the next relays must not deliver to (pushes ejected energy away)
+  avoidN?: number // hops of `avoid` remaining: decremented each relay, avoid drops at 0
 }
 
 // --- render types ---

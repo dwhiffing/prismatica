@@ -13,9 +13,9 @@ import { canPlace, nearest, rnd, setSeed, unproject } from './core'
 import { computeSun } from './lighting'
 import { render } from './render'
 import { inMinimap, mmToWorld } from './minimap'
-import { miscSounds } from './sounds'
+import { deselectBuildingSound, deselectBuildingTypeSound, errorSound, placeBuildingSound, selectBuildingSound, selectBuildingTypeSound, sellBuildingSound } from './sounds'
 import { C, H, LT, resize, S, SPAWN, V } from './state'
-import { cycleSpec, devPulse, ejectSpec, relay, spawnEnemy, stepSim } from './sim'
+import { cycleSpec, devPulse, ejectSpec, relay, spawnEnemy, startWave, stepSim } from './sim'
 import { drawUI } from './ui'
 import { playMusic, renderMusic, toggleMute, zzfx, zzfxX } from './zzfx'
 import type { BType, Building, EType } from './types'
@@ -191,10 +191,12 @@ let lastBuilt: { x: number; y: number } | null = null // last spot a drag-line b
 // cancels it (that's a pan/chain, not a press). Set in onpointerdown, cleared on move/up.
 let towerHold: ReturnType<typeof setTimeout> | null = null
 // place one building of the current tool if affordable and not blocked; true if placed
-const tryBuild = (x: number, y: number) => {
+const tryBuild = (x: number, y: number, shift = true) => {
   if (S.resource < COST[S.tool] || !canPlace(S.tool, x, y)) return false
   S.resource -= COST[S.tool]
   S.buildings.push(mkB(S.tool, x, y, BUILD[S.tool]))
+  if (!shift) S.mode = 'select' // hold shift to keep placing
+  zzfx(...placeBuildingSound)
   drawUI()
   return true
 }
@@ -337,17 +339,11 @@ C.onpointerup = (e: PointerEvent) => {
   // press on a blocked spot, drag to a valid one, and it builds on pointer up (dropped if still
   // blocked/unaffordable). Build mode doesn't pan, so the drag is purely repositioning.
   if (S.mode === 'build') {
-    if (S.resource < COST[S.tool] || !canPlace(S.tool, p.x, p.y)) return // unaffordable or blocked
-    zzfx(...miscSounds[0])
-    S.resource -= COST[S.tool]
-    S.buildings.push(mkB(S.tool, p.x, p.y, BUILD[S.tool]))
-    if (!e.shiftKey) S.mode = 'select' // hold shift to keep placing
-    drawUI()
+    if (!tryBuild(p.x, p.y, e.shiftKey)) zzfx(...errorSound) // blocked/unaffordable: error beep
     return
   }
   // select mode: a drag (pan/chain) already did its work live; only a plain click selects.
   if (didDrag) return
-  zzfx(...miscSounds[0])
   {
     // a pending tower-hold means this press was a quick CLICK on the already-selected tower
     // (the long-press eject never fired) -> cycle its color order. Consume the click either way.
@@ -357,10 +353,7 @@ C.onpointerup = (e: PointerEvent) => {
       return
     }
     const hit = nearest(p, () => true)
-    // clicking an ALREADY-SELECTED finished link cycles its color filter: any->R->G->B->any.
-    if (hit && hit === S.sel && hit.bp == null && hit.t === 'L' && !hit.crystalCol) {
-      hit.filt = [4, 0, 1, , 2][hit.filt || 0] // cycle any(0)->R(4)->G(2)->B(1)->any
-    }
+    zzfx(...(hit ? selectBuildingSound : deselectBuildingSound))
     S.sel = hit
   }
 }
@@ -372,6 +365,7 @@ C.oncontextmenu = (e: MouseEvent) => {
   e.preventDefault()
   S.mode = 'select'
   S.sel = null
+  zzfx(...deselectBuildingTypeSound)
   drawUI()
 }
 
@@ -382,6 +376,7 @@ addEventListener('keydown', (e: KeyboardEvent) => {
     S.tool = 'SLMT'[ti] as BType
     S.mode = 'build'
     S.sel = null // deselect any building when starting a build
+    zzfx(...selectBuildingTypeSound) // picked a build tool
     drawUI()
     return
   }
@@ -390,14 +385,24 @@ addEventListener('keydown', (e: KeyboardEvent) => {
     toggleMute()
     return
   }
-  // 'd': toggle sell mode (same as the HUD Sell button) — then tap/drag buildings to demolish
-  if (e.key === 'd') { S.mode = S.mode === 'sell' ? 'select' : 'sell'; S.sel = null; drawUI() }
+  // 'd': if a sellable building is SELECTED, sell just that one. Otherwise toggle sell mode
+  // (same as the HUD Sell button) — then tap/drag buildings to demolish.
+  if (e.key === 'd') {
+    if (S.sel && S.sel.crystalCol == null) { sellBuilding(S.sel); S.sel = null }
+    else {
+      S.mode = S.mode === 'sell' ? 'select' : 'sell'
+      zzfx(...(S.mode === 'select' ? deselectBuildingTypeSound : selectBuildingTypeSound))
+      S.sel = null
+    }
+    drawUI()
+  }
 })
 // sell `b`, refunding half its build cost. Color crystals are indestructible world fixtures and
 // never sell. Selling a DEPLETED miner (no live crystal in range) sells EVERY depleted miner at
 // once — a one-tap cleanup of spent mining sites; any other building sells just itself.
 function sellBuilding(b: Building) {
   if (b.crystalCol != null) return
+  zzfx(...sellBuildingSound)
   const starved = (o: Building) => o.t === 'M' &&
     !S.nodes.some((n) => n.amt > 0 && (n.x - o.x) ** 2 + (n.y - o.y) ** 2 < MINE_RANGE ** 2)
   const doomed = starved(b) ? S.buildings.filter(starved) : [b]
@@ -469,6 +474,8 @@ if (DEV) (globalThis as any).regen = reset
 declare const DEVTOOLS: boolean
 if (DEVTOOLS) {
   addEventListener('keydown', (ev: KeyboardEvent) => {
+    // Tab: jump to the next wave (spawns its roster immediately)
+    if (ev.key === 'Tab') { ev.preventDefault(); startWave(S.wave + 1); return }
     if (!S.mouse) return
     const w = unproject(S.mouse.x, S.mouse.y)
     // 'z x c v b n': spawn enemy kind 0..5 (normal/shield/shielder/fast/summoner/boss) at cursor

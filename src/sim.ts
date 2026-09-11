@@ -1,11 +1,13 @@
 // Simulation: energy routing, per-second tick, and the per-frame world update
 // (towers, miners, enemies, pulses). Pure logic — no drawing.
-import { BSPEED, BULLET_LIFE, CHARGE, ENEMIES, ESPEED, KB_BULLET, KB_DECAY, KB_ROCKET, LASER_DRAIN, LASER_OFF, LASER_ON, LINK_MAX, LINK_RANGE, MINE_ON, MINE_OFF, MINE_RANGE, PSPEED, R, RSPEED, SHIELDER_RANGE, SPAWN_GAP, TOWER_RANGE, WAVE1_DELAY, WAVE_WIN } from './constants'
+import { BSPEED, BUILD, BULLET_LIFE, CHARGE, ENEMIES, ESPEED, KB_BULLET, KB_DECAY, KB_ROCKET, LASER_OFF, LASER_ON, LINK_MAX, LINK_RANGE, MINE_ON, MINE_OFF, MINE_RANGE, PSPEED, R, RSPEED, SHIELDER_RANGE, SPAWN_GAP, TOWER_GAIN, TOWER_RANGE, WAVE1_DELAY, WAVE_WIN } from './constants'
 import { near, rnd } from './core'
-import { S, SPAWN, SUN } from './state'
+import { S, SPAWN, SUN, V } from './state'
 import { drawUI } from './ui'
 import type { Building, Enemy, Pt, ResNode, Shot } from './types'
 import { ekOf, isMenu } from './game'
+import { zzfx } from './zzfx'
+import { basicHitSound, basicShootSound, bounceShootSound, buildingProgressSound, completeBuildingSound, coneSound, enemyDestroySound, laserSound, mgShootSound, mineSound, railShootSound, rocketShootSound, towerAbsorbEnergySound, towerEjectEnergySound } from './sounds'
 
 // energy color bitmask (4=R,2=G,1=B) -> upgrade index 0..6: green,red,blue,yellow,cyan,magenta,white
 const COLIDX: Record<number, number> = { 2: 0, 4: 1, 1: 2, 6: 3, 3: 4, 5: 5, 7: 6 }
@@ -14,11 +16,12 @@ const IDXCOL = [2, 4, 1, 6, 3, 5, 7]
 // the 6 orderings of 3 slots. Tapping F steps a tower's `perm` through these, re-slotting its
 // absorbed colors into weapon/elem/bonus — so any of the 3! assignments is reachable.
 const PERMS = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]]
-// derive weapon/elem/bonus from a tower's absorbed colors, reordered by its current perm.
-// Only slots that actually have a color are set; the rest clear (partial spec applies as-is).
+// derive weapon/bonus/element from a tower's absorbed colors, reordered by its current perm:
+// slot 0 -> weapon, slot 1 -> BONUS, slot 2 -> ELEMENT. Only slots that actually have a color are
+// set; the rest clear (partial spec applies as-is).
 export function applyCols(b: Building) {
   const cs = b.cols || [], o = PERMS[b.perm || 0]
-  b.weapon = cs[o[0]]; b.elem = cs[o[1]]; b.bonus = cs[o[2]] // undefined where cs has no color
+  b.weapon = cs[o[0]]; b.bonus = cs[o[1]]; b.elem = cs[o[2]] // undefined where cs has no color
 }
 // element (0..6) -> projectile "r,g,b" tint (matches the render PIPRGB order).
 const ECOL = ['68,255,102', '255,68,68', '68,136,255', '238,238,68', '68,255,255', '255,68,255', '255,255,255']
@@ -33,10 +36,16 @@ const building = (o: Building) => o.bp != null
 // charge. links never keep it.
 const wants = (o: Building) =>
   building(o) ? (o.bp as number) > 0 : o.e < (o.t === 'T' ? CHARGE : o.t === 'M' ? 1 : 0)
-// apply one unit that has arrived: build it, or store it.
+// apply one unit that has arrived: build it, or store it. A TOWER gains only TOWER_GAIN power per
+// energy unit (so it takes several units to charge up), while miners/others store the full unit.
 function feed(o: Building) {
-  if (building(o)) (o.bp as number) -= 1
-  else o.e += 1
+  if (building(o)) {
+    (o.bp as number) -= 1
+    // per build-unit tick; pitch rises with progress (base 100 -> ~180 near done). Completion
+    // sound covers the last unit, so only play while still building (bp > 0).
+    if (o.bp) playAt(buildingProgressSound(700 - (1 - o.bp / BUILD[o.t]) * 600), o.x, o.y)
+  }
+  else o.e += o.t === 'T' ? TOWER_GAIN : 1
 }
 
 // spawn `n` particles at (x,y) flying out in random directions at up to `spd`
@@ -49,11 +58,27 @@ export function spawnParts(x: number, y: number, n: number, spd: number, col: st
   }
 }
 
+// explosion sound volume 0..1 by how close (x,y) is to the CENTER of the screen (the camera
+// point): full at center, ramping DOWN TO ZERO at the screen edge (~V.W/2 px out) so anything you
+// pan away from goes silent. Distance is world units × zoom (screen px), framing-relative.
+function centerVol(x: number, y: number) {
+  const d = Math.hypot(x - S.camX, y - S.camY) * S.ZOOM // world dist -> screen px from center
+  return Math.max(0, 1 - d / (V.W / 2))
+}
+// play a positional sound (a zzfx param array) at world (x,y): its volume (param 0) is scaled by
+// proximity to screen center, and it's skipped entirely once fully off-screen (silent). Use for
+// any world-located effect so panning away quiets it.
+export function playAt(sound: (number | undefined)[], x: number, y: number) {
+  const v = centerVol(x, y)
+  if (v) zzfx((sound[0] as number || 1) * v, ...sound.slice(1))
+  return v // truthy = actually audible (on-screen), so callers can cap concurrent plays
+}
 // a death explosion at (x,y): one big fading core particle plus a spray of debris flying out.
-// Shared by dying enemies and destroyed buildings.
+// Shared by dying enemies and destroyed buildings. Sound is quieter the further from screen center.
 function explode(x: number, y: number) {
   S.parts.push([x, y, 0, 0, 1, '255,90,60', 6]) // big explosion core
   spawnParts(x, y, 12, 110, '255,120,60')       // debris flying out
+  playAt(enemyDestroySound, x, y)
 }
 // remove dead enemies (hp<=0), exploding each. Returns the survivors.
 function killDead() {
@@ -61,11 +86,11 @@ function killDead() {
   S.enemies = S.enemies.filter((e) => e.hp > 0)
 }
 
-// spawn a pulse from `from` to `to`, carrying an energy color. `avoid` (a building the next relay
-// must NOT deliver back to) rides along one hop — used to push just-ejected energy away.
-function hop(from: Pt, to: Building, col = 0, avoid?: Building) {
+// spawn a pulse from `from` to `to`, carrying an energy color. `avoid` (a building the relays must
+// NOT deliver back to) rides along for `avoidN` more hops — used to push just-ejected energy away.
+function hop(from: Pt, to: Building, col = 0, avoid?: Building, avoidN = 0) {
   const len = Math.hypot(to.x - from.x, to.y - from.y)
-  S.pulses.push({ x: from.x, y: from.y, tx: to.x, ty: to.y, p: 0, len, dst: to, col, avoid })
+  S.pulses.push({ x: from.x, y: from.y, tx: to.x, ty: to.y, p: 0, len, dst: to, col, avoid, avoidN })
 }
 
 // does a tower still have room to absorb a colored energy unit (fewer than 3 specced)? Must be
@@ -74,50 +99,51 @@ const towerRoom = (o: Building) => o.t === 'T' && !building(o) && (o.cols?.lengt
 // can building `o` receive energy of color `col`? A link forwards (or builds while under
 // construction). COLORED energy is only ever CONSUMED by a tower with spec room — and it takes
 // it regardless of firing charge, so a fully-charged tower still upgrades. UNCOLORED energy
-// goes to anything that WANTS a unit (excludes full miners/towers and finished solars). A
-// link's color filter (filt) rejects energy lacking that component. Colored energy is never
-// lost — it routes onward (relayed by links, recolored by crystals) until it finds a tower.
+// goes to anything that WANTS a unit (excludes full miners/towers and finished solars). Colored
+// energy is never lost — it routes onward (relayed by links, recolored by crystals) to a tower.
 const accepts = (o: Building, col: number) =>
-  (!o.filt || col & o.filt) &&
-  (col ? o.t === 'L' || towerRoom(o) : o.t === 'L' || wants(o))
+  col ? o.t === 'L' || towerRoom(o) : o.t === 'L' || wants(o)
 // relay a unit onward FROM `node`, preserving its energy color. `avoid` (if given) is excluded
 // from every candidate — used so just-ejected energy at its first link never routes back to the
 // tower that released it.
-export function relay(node: Building, col = 0, avoid?: Building) {
+export function relay(node: Building, col = 0, avoid?: Building, avoidN = 0) {
   if (node.drain) return // title drain node: energy arrives and is consumed, never forwarded
-  const ok = (o: Building) => o !== node && o !== avoid && accepts(o, col) && near(node, o, LINK_RANGE)
+  // the avoid only applies while hops remain; each forward hop carries one fewer, so ejected
+  // energy shuns its source tower for avoidN hops then may return.
+  const av = avoidN > 0 ? avoid : undefined, n = Math.max(0, avoidN - 1)
+  const ok = (o: Building) => o !== node && o !== av && accepts(o, col) && near(node, o, LINK_RANGE)
   // PRIORITY: an in-range consumer that actually NEEDS this unit (under construction, or a
   // miner/tower below charge — anything non-link that accepts + keeps it) wins over the forced
   // route. A `route` steers surplus energy, but a building waiting to be built or powered should
   // never be starved just because this link is aimed elsewhere.
   const needy = S.buildings.filter((o) => o.t !== 'L' && ok(o))
-  if (needy.length) { node.ni = ((node.ni || 0) + 1) % needy.length; hop(node, needy[node.ni], col); return }
+  if (needy.length) { node.ni = ((node.ni || 0) + 1) % needy.length; hop(node, needy[node.ni], col, av, n); return }
   // forced route next, as long as the target is alive, in range, can receive, and isn't avoided
   const rt = node.route
-  if (rt && rt !== avoid && S.buildings.includes(rt) && accepts(rt, col) && near(node, rt, LINK_RANGE)) {
-    hop(node, rt, col)
+  if (rt && rt !== av && S.buildings.includes(rt) && accepts(rt, col) && near(node, rt, LINK_RANGE)) {
+    hop(node, rt, col, av, n)
     return
   }
   // never relay back against an established directed connection: if o routes to us (o->node),
   // don't send energy the other way (node->o).
   const ns = S.buildings.filter((o) => o.route !== node && ok(o))
-  if (ns.length) { node.ni = ((node.ni || 0) + 1) % ns.length; hop(node, ns[node.ni], col); return }
+  if (ns.length) { node.ni = ((node.ni || 0) + 1) % ns.length; hop(node, ns[node.ni], col, av, n); return }
   // dead end. UNCOLORED energy just stops (it's cheap fuel). COLORED energy is precious and must
   // never be lost, so bounce it to the nearest acceptor anywhere — even back the way it came, even
   // out of range — so it keeps circulating until something consumes it.
-  if (col) bounceColor(node, col, avoid)
+  if (col) bounceColor(node, col, av, n)
 }
 // last-resort re-home for colored energy with no in-range forward target: hop it to the nearest
 // building (any range, ignoring directed-connection rules) that can still accept this color.
-// `avoid` is excluded (and rides one more hop, so the first LINK the orb reaches sends it away).
-function bounceColor(from: Building, col: number, avoid?: Building) {
+// `avoid` is excluded and rides `avoidN` more hops, so ejected energy keeps shunning its source.
+function bounceColor(from: Building, col: number, avoid?: Building, avoidN = 0) {
   let best: Building | null = null, bd = Infinity
   for (const o of S.buildings) {
     if (o === from || o === avoid) continue
     const dd = (o.x - from.x) ** 2 + (o.y - from.y) ** 2
     if (dd < bd && accepts(o, col)) { bd = dd; best = o }
   }
-  if (best) hop(from, best, col, avoid) // else: no acceptor exists anywhere — nothing we can do
+  if (best) hop(from, best, col, avoid, avoidN) // else: no acceptor exists anywhere — nothing we can do
 }
 
 
@@ -125,9 +151,14 @@ function bounceColor(from: Building, col: number, avoid?: Building) {
 // runs per-frame in stepSim (see updateWaves), not here.
 function tick() {
   for (const b of S.buildings) b.load = 0 // reset per-second link throughput counters
-  // every finished solar emits a unit into a neighbour (cycled round-robin) — but only in
-  // daylight: solars are photovoltaic, so they go dark when the sun is below the horizon.
-  if (SUN.up > 0) for (const b of S.buildings) if (b.t === 'S' && !building(b)) relay(b)
+  // each finished solar SCHEDULES its once-per-second emission after a random 0-250ms delay
+  // (stored in b.cd, counted down in stepSim) so the solars don't all pulse in lockstep. In
+  // daylight every tick emits; at night each solar runs at HALF speed — it emits every OTHER tick
+  // (toggling b.sk), deterministically (no randomness).
+  for (const b of S.buildings) if (b.t === 'S' && !building(b)) {
+    if (SUN.up > 0) { b.sk = 0; b.cd = rnd() * .25 + .001 }
+    else if ((b.sk = b.sk ? 0 : 1)) b.cd = rnd() * .25 + .001 // night: emit on alternate ticks
+  }
   if (!isMenu) drawUI()
 }
 
@@ -151,22 +182,23 @@ function updateWaves(dt: number) {
     else startWave(S.wave + 1)
   }
 }
-function startWave(n: number) {
+export function startWave(n: number) {
   S.wave = n
   S.queue = waveRoster(n)
   S.spawnT = 0 // first enemy spawns right away
 }
 
-// per-kind base stats: [hp, shield, speed]. kind 0 normal .. 5 boss. A shield enemy carries
+// per-kind base stats: [hp, shield, speed, mass]. kind 0 normal .. 5 boss. A shield enemy carries
 // half its total as shield; a shielder has lots of hp and no shield; fast is frail+quick;
-// summoner/boss are tanky+slow.
-const EKIND: [number, number, number][] = [
-  [6, 0, ESPEED],       // 0 normal
-  [6, 6, ESPEED],       // 1 shield (normal hp, plus a shield on top)
-  [20, 0, ESPEED * .4], // 2 shielder (no shield of its own, high hp; slow)
-  [2, 0, ESPEED * 2.2], // 3 fast (swarm)
-  [16, 0, ESPEED * .5], // 4 summoner (hangs back)
-  [80, 0, ESPEED * .5], // 5 boss (huge hp, slow, pauses — see movement)
+// summoner/boss are tanky+slow. MASS scales knockback resistance — a hit's shove distance is
+// divided by mass, so heavier enemies barely move (boss) and light ones fly (fast).
+const EKIND: [number, number, number, number][] = [
+  [12, 0, ESPEED, 1],       // 0 normal
+  [12, 6, ESPEED, 1.5],     // 1 shield (12 base hp + a 6 shield; heavier with its shield)
+  [40, 0, ESPEED * .4, 3],  // 2 shielder (high hp)
+  [2, 0, ESPEED * 2.2, .5], // 3 fast (light — flies far when hit)
+  [16, 0, ESPEED * .5, 3],  // 4 summoner
+  [240, 0, ESPEED * .5, 7], // 5 boss (barely shoved)
 ]
 // TODO: tweak me
 // kind, starting from wave, base count, per wave increment
@@ -216,23 +248,18 @@ export function devPulse(x: number, y: number, col: number) {
 // accepting building, and mark `b` as avoided so the first link it reaches routes it AWAY from
 // the tower rather than straight back in. Colored energy is never lost — it circulates.
 function emitOrb(b: Building, col: number) {
-  if (S.buildings.includes(b)) bounceColor(b, col, b)
+  if (S.buildings.includes(b)) bounceColor(b, col, b, 5) // shun the source tower for 5 hops
 }
 
 // HOLD F: eject everything the tower holds and reset it to a bare peashooter. Its absorbed
 // colors are released back into the world as orbs (150ms stagger so they don't clump), and its
 // stored uncolored charge bursts as particles — nothing is silently lost.
 export function ejectSpec(b: Building) {
-  let delay = 0
-  for (const idx of b.cols || []) {
-    S.emits.push([delay, b, IDXCOL[idx]])
-    delay += 0.15 // 150ms stagger between released orbs
-  }
-  if (b.e > 0) spawnParts(b.x, b.y, 8, 60, '255,238,140') // release stored (uncolored) charge
-  b.cols = []
-  b.perm = 0
-  b.e = 0
-  applyCols(b) // clears weapon/elem/bonus
+  if (!b.cols?.length) return // nothing to eject
+  zzfx(...towerEjectEnergySound)
+  S.emits.push([0, b, IDXCOL[b.cols.pop()!]]) // release only the LAST absorbed color as an orb
+  b.perm = 0 // color set changed — reset the permutation so remaining colors stay packed in order
+  applyCols(b) // re-derive weapon/elem/bonus from the shortened stack
 }
 
 // TAP F (with 2+ colors): step to the next ordering that changes the weapon/elem/bonus
@@ -264,9 +291,12 @@ function pickTarget(): Building | null {
 // pick which enemy a tower fires at, among those within `range`, by targeting `mode`:
 // 0 closest (default), 1 furthest, 2 most hp, 3 least hp, 4 random. A per-mode "score" is
 // derived and the max wins; distance modes negate for closest.
-function pickEnemy(b: Building, range: number, mode = 0): Enemy | null {
-  const inR = S.enemies.filter((e) => near(b, e, range))
+function pickEnemy(b: Building, range: number, mode = 0, preferShield = false): Enemy | null {
+  let inR = S.enemies.filter((e) => near(b, e, range))
   if (!inR.length) return null
+  // lasers prefer shielded targets (they're strong vs shields): if any shielded enemy is in
+  // range, target only those; otherwise fall through to normal targeting.
+  if (preferShield) { const sh = inR.filter((e) => e.sh! > 0); if (sh.length) inR = sh }
   if (mode === 4) return inR[(rnd() * inR.length) | 0] // random
   const score = (e: Enemy) => {
     const d2 = (e.x - b.x) ** 2 + (e.y - b.y) ** 2
@@ -308,38 +338,58 @@ function bullet(b: Building, e: Enemy, dmg: number, acc: number, spread: number,
 
 // PEASHOOTER (default, pre-upgrade): gray leading shot, always accurate.
 function firePea(b: Building, e: Enemy, dmg: number) {
-  bullet(b, e, dmg, 1, 0, '200,200,200')
+  playAt(basicShootSound, b.x, b.y) // quiet if off-screen
+  bullet(b, e, dmg, 1, 0, '255,200,140', BSPEED * .5, BULLET_LIFE * 2).shieldMul = .25 // 50% slower (2x life keeps range); weak vs shields
 }
 
 // FLAMETHROWER (weapon 0, green): a spray of big, slow, short-lived puffs that PASS THROUGH
 // enemies, damaging each once — a close-range cone of flame. (Element AoE comes in Phase 3.)
 function fireCone(b: Building, e: Enemy, dmg: number) {
+  playAt(coneSound, b.x, b.y) // quiet if off-screen
   for (let i = 0; i < 3; i++) {
-    const s = bullet(b, e, dmg, 1, 20, '120,255,120', BSPEED * (.25 + rnd() * .1), .8)
+    const s = bullet(b, e, dmg, 1, 20, '255,200,140', BSPEED * (.25 + rnd() * .1), .8) // uncolored-energy color when no element
     s.pierce = 99; s.hits = []; s.sz = 4; s.kb = 0 // pass through, drawn big, no knockback
   }
 }
 
 // MACHINE GUN (weapon 2, blue): a single fast, long-range, low-accuracy bullet.
 function fireMG(b: Building, e: Enemy, dmg: number) {
-  bullet(b, e, dmg, .8, 4, '120,180,255', BSPEED * 1.4, .8)
+  playAt(mgShootSound, b.x, b.y)
+  const s = bullet(b, e, dmg, .8, 4, '255,200,140', BSPEED * 1.4, .8) // uncolored-energy color
+  s.kb = KB_BULLET * .4; s.shieldMul = .25 // low knockback; weak vs shields
 }
 
-// RAILGUN (weapon 3, yellow): a fast hitscan-like shot that PIERCES — it keeps flying and
-// damages every enemy it passes through (each once, tracked in `hits`).
+// RAILGUN (weapon 3, yellow): an INSTANT hitscan ray. It fires a straight line from the tower
+// toward the target out to full range, damaging every enemy the line passes through, then draws a
+// beam that fades out over time (no travelling bullet).
 function fireRail(b: Building, e: Enemy, dmg: number) {
-  const s = bullet(b, e, dmg, 1, 0, '238,238,120', BSPEED * 2.5, .6)
-  s.pierce = 99; s.hits = []
+  playAt(railShootSound, b.x, b.y)
+  const col = shotCol(b, '255,200,140') // uncolored-energy color when no element
+  const rng = TOWER_RANGE * 1.6 // must match the railgun WEP rng
+  const dx = e.x - b.x, dy = e.y - b.y, d = Math.hypot(dx, dy) || 1
+  const ux = dx / d, uy = dy / d // unit direction toward the target
+  const ex = b.x + ux * rng, ey = b.y + uy * rng // ray endpoint at max range
+  for (const en of S.enemies) {
+    // perpendicular distance from the enemy to the ray line, only if it's ahead of the tower
+    const t = (en.x - b.x) * ux + (en.y - b.y) * uy
+    if (t >= 0 && t <= rng && Math.hypot(en.x - b.x - ux * t, en.y - b.y - uy * t) < R.E + 4) {
+      hurt(en, dmg, b.elem); knockback(en, b.x, b.y, KB_BULLET)
+    }
+  }
+  S.rays.push([b.x, b.y, ex, ey, 1, col])
 }
 
 // BOUNCE (weapon 4, cyan): a slow projectile that ricochets to a new nearby enemy on each hit.
 function fireBounce(b: Building, e: Enemy, dmg: number) {
-  bullet(b, e, dmg, 1, 0, '120,255,255', BSPEED * .5, 3).bounce = 3
+  playAt(bounceShootSound, b.x, b.y)
+  const s = bullet(b, e, dmg, 1, 0, '255,200,140', BSPEED * .25, 1.5) // uncolored color; life 1.5 = short range
+  s.bounce = 4; s.kb = KB_BULLET * .5 // 50% less knockback
 }
 
 // ROCKET spawn helper: `dmg`/`kb`/`col` shape it; `big` = long-range (faster, larger);
 // `straight` = a grenade (flies straight at the target, no homing) that still explodes.
 function rocket(b: Building, e: Enemy, dmg: number, kb: number, big: boolean, col: string, straight = false) {
+  playAt(rocketShootSound, b.x, b.y)
   const dx = e.x - b.x, dy = e.y - b.y, d = Math.hypot(dx, dy) || 1
   const sp = big ? RSPEED * 1.7 : RSPEED
   S.shots.push({
@@ -353,7 +403,9 @@ function rocket(b: Building, e: Enemy, dmg: number, kb: number, big: boolean, co
 // not an instant teleport). kb is the intended total slide distance; with the KB_DECAY
 // exponential falloff, an initial velocity of kb*KB_DECAY integrates to ~that distance.
 function knockback(e: Enemy, fx: number, fy: number, kb: number) {
-  if (e.k === 5) kb *= .15 // boss: heavy knockback resistance (barely shoved)
+  // divide the shove by the enemy's MASS (per-kind, from EKIND) — a live shield DOUBLES it (half
+  // the knockback) — so heavy/shielded enemies barely move and light ones fly.
+  kb /= EKIND[e.k || 0][3] * (e.sh! > 0 ? 2 : 1)
   const dx = e.x - fx, dy = e.y - fy, d = Math.hypot(dx, dy) || 1
   e.kx = (e.kx || 0) + (dx / d) * kb * KB_DECAY
   e.ky = (e.ky || 0) + (dy / d) * kb * KB_DECAY
@@ -363,14 +415,14 @@ const AFFLICT = 3 // base affliction duration (seconds) an element status lasts 
 // deal `dmg` to enemy `e` and apply the tower's element (0..6, or undefined = no element).
 // water (2) amplifies damage; the rest set a status timer. arcane (5) shares the damage to
 // nearby arcane-affected enemies; lightning (3) restuns on hit; fire (1) kills at 10% hp.
-function hurt(e: Enemy, dmg: number, elem?: number, laser?: boolean) {
+function hurt(e: Enemy, dmg: number, elem?: number, shieldMul = 1) {
   e.hurtT = .5 // just damaged -> immune to shielder shield-regen for 500ms
   if (e.wetT) dmg *= 1.1 // water: +10% damage taken
-  // shield: absorbs the WHOLE hit before hp — resistant to bullets (×0.25), weak to lasers
-  // (×1.5). Damage does NOT overflow to hp on the hit that breaks it; elements are blocked
-  // while any shield remains.
+  // shield: absorbs the WHOLE hit before hp. shieldMul scales the hit vs shields: laser 1.5 (strong),
+  // pea/MG bullets .25 (weak penetration), everything else 1 (normal). Damage does NOT overflow to
+  // hp on the hit that breaks it; elements are blocked while any shield remains.
   if (e.sh && e.sh > 0) {
-    e.sh = Math.max(0, e.sh - dmg * (laser ? 1.5 : .25))
+    e.sh = Math.max(0, e.sh - dmg * shieldMul)
     return
   }
   e.hp -= dmg
@@ -392,14 +444,14 @@ function hurt(e: Enemy, dmg: number, elem?: number, laser?: boolean) {
 // eng = energy cost multiplier (relative — higher = drains energy faster). PEASHOOTER (a tower
 // with no weapon yet) uses PEA below.
 type Weapon = { rng: number; cd: number; dmg: number; eng: number; tgt?: number; beam?: boolean; fire?: (b: Building, e: Enemy, dmg: number) => void }
-const PEA: Weapon = { rng: 1, cd: .7, dmg: 4, eng: 1, fire: firePea }
+const PEA: Weapon = { rng: 1, cd: 1.05, dmg: 3, eng: 1, fire: firePea } // dmg 3 kills a 12-hp normal in 4 hits
 const WEP: Weapon[] = [
-  { rng: .55, cd: .15, dmg: .4, eng: .4, fire: fireCone },                           // 0 green — flamethrower (rapid, cheap, short range)
-  { rng: 1.2, cd: .4, dmg: 12, eng: 1, tgt: 3, beam: true },                         // 1 red — laser (blast costs LASER_DRAIN*eng*LASER_ON = 3, ≤ CHARGE)
-  { rng: 1.2, cd: .18, dmg: 2, eng: .5, fire: fireMG },                                // 2 blue — machine gun (cheap, rapid)
-  { rng: 1.6, cd: .9, dmg: 6, eng: 2, tgt: 1, fire: fireRail },                      // 3 yellow — railgun (pierce, high energy)
-  { rng: 1.2, cd: .8, dmg: 4, eng: .6, fire: fireBounce },                           // 4 cyan — bouncing (cheap)
-  { rng: 2.5, cd: 1.3, dmg: 6, eng: 1, tgt: 1, fire: (b, e, dmg) => rocket(b, e, dmg, KB_ROCKET, true, '255,120,255') }, // 5 magenta — homing rocket
+  { rng: .55, cd: .2, dmg: .3, eng: .15, fire: fireCone },                        // 0 green — flamethrower (rapid, cheap, short range)
+  { rng: .7, cd: .4, dmg: 15, eng: .7, tgt: 3, beam: true },                      // 1 red — laser (a full blast drains a whole CHARGE·eng)
+  { rng: .6, cd: .2, dmg: 1.5, eng: .15, fire: fireMG },                           // 2 blue — machine gun (cheap, rapid, short range)
+  { rng: .7, cd: 1.5, dmg: 12, eng: 3, tgt: 1, fire: fireRail },                   // 3 yellow — railgun (pierce, slow, high energy)
+  { rng: 1, cd: 1.8, dmg: 6, eng: .6, fire: fireBounce },                          // 4 cyan — bouncing (cheap)
+  { rng: 2, cd: 2, dmg: 5, eng: 2, tgt: 1, fire: (b, e, dmg) => rocket(b, e, dmg, KB_ROCKET * .35, true, '255,120,255') }, // 5 magenta — homing rocket
   { rng: 1.4, cd: 1, dmg: 6, eng: 1, tgt: 2, fire: (b, e, dmg) => rocket(b, e, dmg, KB_ROCKET, false, '230,230,230', true) }, // 6 white — grenade (straight, explodes)
 ]
 // a tower's stats: its upgraded weapon, or the peashooter default.
@@ -409,6 +461,9 @@ const wepOf = (b: Building) => b.weapon != null ? WEP[b.weapon] : PEA
 const fireRateMod = (b: Building) => b.bonus === 2 ? .5 : 1
 // a tower's actual firing range = TOWER_RANGE * this (for the range ring).
 export const wepRng = (b: Building) => wepOf(b).rng
+// does this tower have enough energy to actually fire? (laser needs half a charge to start a
+// blast; a projectile weapon needs its full per-shot cost.) Drives the lit-head rendering.
+export const canFireE = (b: Building) => { const w = wepOf(b); return b.e >= (w.beam ? CHARGE / 2 : w.eng) }
 
 let acc = 0 // fixed-timestep accumulator for the 1s tick
 // advance the whole simulation by dt seconds.
@@ -418,14 +473,18 @@ export function stepSim(dt: number) {
   while (acc >= 1) { acc -= 1; tick() }
   if (!isMenu) updateWaves(dt)
 
+  // solars: count down each one's random emit-delay (b.cd, set in tick); when it crosses 0, emit
+  // its unit and park cd at -1 so it won't re-fire until the next tick reschedules it.
+  for (const b of S.buildings) if (b.t === 'S' && b.cd > 0) { b.cd -= dt; if (b.cd <= 0) { b.cd = -1; relay(b) } }
+
   // fire any staggered orb-releases whose delay has elapsed (see ejectSpec)
   for (const em of S.emits) em[0] -= dt
   for (const em of S.emits) if (em[0] <= 0) emitOrb(em[1], em[2])
   S.emits = S.emits.filter((em) => em[0] > 0)
 
-  // Construction: `bp` counts down as energy arrives (one chunk per unit). When it
-  // hits 0 the building is complete — clear bp so it becomes solid and operational.
-  for (const b of S.buildings) if (b.bp === 0) b.bp = undefined
+  // Construction: `bp` counts down as energy arrives (one chunk per unit). When it hits 0 the
+  // building is complete — clear bp (becomes solid/operational) and play the completion sound.
+  for (const b of S.buildings) if (b.bp === 0) { b.bp = undefined; playAt(completeBuildingSound, b.x, b.y) }
 
   // ease each crystal's displayed scale toward its amt-based size. While it still has resources
   // it only shrinks down to 25% (full=1 -> nearly-empty=0.25); once fully depleted it eases to 0
@@ -442,15 +501,13 @@ export function stepSim(dt: number) {
     if (b.t === 'T') { // towers always fire (spec derives from absorbed colors; peashooter until then)
       const w = wepOf(b) // the tower's weapon stats (or peashooter default)
       if (w.beam) {
-        // LASER (continuous beam): fires for LASER_ON seconds, then must cool down for LASER_OFF
-        // seconds (reduced by the fire-rate bonus) before it can fire again. Energy is spent as a
-        // single lump only WHEN A BLAST ENDS — the beam fires for free, then bills at overheat, so
-        // a blast needs `blastCost` banked up front. `cd` is the phase timer: >=0 counts UP through
-        // the firing window; on reaching LASER_ON it deducts the cost and flips to a negative
-        // cooldown that counts back UP to 0.
+        // LASER (continuous beam): fires for up to LASER_ON seconds, then cools down for LASER_OFF
+        // (reduced by the fire-rate bonus). Energy drains per firing tick, rated so a FULL blast
+        // consumes a whole charge (CHARGE) — and it fires as long as it has any energy.
+        // `cd` is the phase timer: >=0 counts UP through the firing window; on reaching LASER_ON it
+        // flips to a negative cooldown that counts back UP to 0.
         const cd = b.cd || 0
         const cooling = cd < 0
-        const blastCost = LASER_DRAIN * w.eng * LASER_ON
         const rng = TOWER_RANGE * w.rng
         // LOCK targeting for the duration of a blast: mid-blast (cd>0) keep hitting the current
         // target as long as it's alive and in range — so hp-based modes don't rapidly cycle as
@@ -458,13 +515,17 @@ export function stepSim(dt: number) {
         // lost (target died / left range).
         const locked = cd > 0 && b.fx && b.fx.hp > 0 && S.enemies.includes(b.fx) && near(b, b.fx, rng)
           ? b.fx : null
-        const en = cooling || (cd <= 0 && b.e < blastCost) ? null
-          : locked || pickEnemy(b, rng, w.tgt)
+        // can fire this tick? not cooling, and either mid-blast with any energy left, OR starting
+        // a fresh blast with at least HALF a charge banked (so it never fires on a trickle).
+        const canFire = !cooling && b.e > 0 && (cd > 0 || b.e >= CHARGE / 2)
+        const en = canFire ? locked || pickEnemy(b, rng, w.tgt, true) : null // laser: prefer shielded
         if (en) {
+          if (cd <= 0) playAt(laserSound, b.x, b.y) // fresh blast begins -> fire sound (quiet if off-screen)
           b.fx = en
           b.beamA = Math.min(1, (b.beamA || 0) + dt * 6) // ramp on
-          hurt(en, w.dmg * dt, b.elem, true) // laser damage type (weak vs shields)
-          if (cd + dt >= LASER_ON) { b.e = Math.max(0, b.e - blastCost); b.cd = -LASER_OFF * fireRateMod(b) } // blast ends: pay + cool
+          b.e = Math.max(0, b.e - CHARGE / LASER_ON * w.eng * dt) // drain per tick so a full LASER_ON blast uses a WHOLE charge
+          hurt(en, w.dmg * dt, b.elem, 1.5) // laser is STRONG vs shields (×1.5)
+          if (cd + dt >= LASER_ON) b.cd = -LASER_OFF * fireRateMod(b) // firing window over -> cool
           else b.cd = cd + dt
         } else {
           b.beamA = Math.max(0, (b.beamA || 0) - dt * 4) // fade off (cooling, empty, or no target)
@@ -472,12 +533,13 @@ export function stepSim(dt: number) {
           b.cd = cooling ? Math.min(0, cd + dt) : Math.max(0, cd - dt * 2)
         }
       } else {
-        // projectile weapon: fire on cooldown, spending energy scaled by the weapon's eng cost.
+        // projectile weapon: fire on cooldown, but only once it has banked the FULL shot cost
+        // (w.eng) — so a weapon like the railgun can't fire on a trickle of energy.
         b.cd -= dt
-        if (b.cd <= 0 && b.e > 0) {
+        if (b.cd <= 0 && b.e >= w.eng) {
           const en = pickEnemy(b, TOWER_RANGE * w.rng, w.tgt)
           if (en) {
-            b.e = Math.max(0, b.e - w.eng)
+            b.e -= w.eng
             b.cd = w.cd
             w.fire!(b, en, w.dmg)
           }
@@ -492,15 +554,16 @@ export function stepSim(dt: number) {
   // averages exactly 1 resource/sec regardless of how long the beam fires.
   const MRATE = (MINE_ON + MINE_OFF) / MINE_ON
   let mining = 0 // miners actively earning THIS frame (instantaneous rate, flickers as they cycle)
+  let mineSfx = 0 // audible mining sounds started this frame — capped so a big field isn't a wall of noise
   for (const b of S.buildings) {
     if (b.t !== 'M' || building(b)) continue // skip non-miners and those under construction
     if (b.mn) {
-      // accrue at MRATE resource/sec while firing (cycle-averages to 1/sec), but drain the crystal
-      // 3x faster so veins run out 3x sooner (income stays the same; resources are scarcer)
-      const take = Math.min(b.mn.amt / 3, MRATE * dt)
-      b.mn.amt -= take * 3
-      S.resource += take
-      mining += MRATE // this miner earns MRATE/sec this frame (averages 1/sec over the cycle)
+      // accrue while firing, but drain the crystal 1.5x faster so veins run out sooner. Income is
+      // HALF the extraction (cycle-averages to 0.5/sec per miner); the crystal still drains at 1.5x.
+      const take = Math.min(b.mn.amt / 1.5, MRATE * dt)
+      b.mn.amt -= take * 1.5
+      S.resource += take * .5
+      mining += MRATE * .5 // this miner earns MRATE/2/sec this frame (averages 0.5/sec over the cycle)
       const mp = (b.mp || 0) + dt
       b.mp = mp
       // spawn mining sparks off the crystal, but ONLY while the beam is near full (mp in
@@ -523,6 +586,9 @@ export function stepSim(dt: number) {
           b.sh--
           b.mn = n
           b.mp = 0
+          // miner starts a mining pulse (quiet if off-screen; silent on title). Cap at 3 audible
+          // plays per frame so a big miner field doesn't stack into a wall of noise.
+          if (!isMenu && mineSfx < 3 && playAt(mineSound, b.x, b.y)) mineSfx++
         }
       }
     }
@@ -555,9 +621,9 @@ export function stepSim(dt: number) {
     if (aff >= 0 && rnd() < dt * 8)
       S.parts.push([e.x + (rnd() - .5) * 8, e.y + (rnd() - .5) * 8, 0, 0, 1, ECOL[aff], .5, 1])
     if (e.stunT && e.stunT > 0) { e.stunT -= dt; continue } // lightning: frozen in place this frame
-    // SHIELDER (k=2): regenerate shields on nearby normal/shield enemies (granting one to
-    // normals, which have none) up to a shield-enemy's max (EKIND[1][1]).
-    if (e.k === 2) for (const o of S.enemies) if (o.k! < 2 && !(o.hurtT! > 0) && near(e, o, SHIELDER_RANGE) && (o.sh || 0) < EKIND[1][1]) {
+    // SHIELDER (k=2): regenerate shields on nearby normal/shield/fast enemies (granting one to
+    // those that have none) up to a shield-enemy's max (EKIND[1][1]). Skips shielders/summoners/boss.
+    if (e.k === 2) for (const o of S.enemies) if ((o.k! < 2 || o.k === 3) && !(o.hurtT! > 0) && near(e, o, SHIELDER_RANGE) && (o.sh || 0) < EKIND[1][1]) {
       o.sh0 = EKIND[1][1] // give it a shield capacity so the bar/tint reads
       o.sh = Math.min(EKIND[1][1], (o.sh || 0) + 1.5 * dt)
     }
@@ -570,8 +636,8 @@ export function stepSim(dt: number) {
     if (e.slowT) e.slowT -= dt
     // BOSS (k=5): move in bursts — advance ~1s, then pause ~1s (ai < 0 = paused phase).
     if (e.k === 5) { e.ai = ((e.ai || 0) + dt) % 2; if (e.ai > 1) spd = 0 }
-    // SUMMONER (k=4): hangs back — stops advancing once fairly close to its target.
-    if (e.k === 4 && Math.hypot(tg.x - e.x, tg.y - e.y) < 200) spd = 0
+    // SUMMONER (k=4): hangs back — stops advancing once fairly close to the NEAREST tower.
+    if (e.k === 4 && S.buildings.some((o) => o.t === 'T' && Math.hypot(o.x - e.x, o.y - e.y) < 100)) spd = 0
     // converted (white): flee the target instead of advancing toward it.
     const dir = e.convT && e.convT > 0 ? -1 : 1
     if (e.convT) e.convT -= dt
@@ -590,7 +656,7 @@ export function stepSim(dt: number) {
     }
     // separation: push apart from any other enemy within the separation radius so they spread
     // out instead of stacking up. Push strength scales with overlap depth.
-    for (const o of S.enemies) if (o !== e) {
+    for (const o of S.enemies) if (o !== e && !(e.k === 4 && o.k === 3)) { // summoners ignore the fast swarm they spawn
       const ox = e.x - o.x, oy = e.y - o.y, od = Math.hypot(ox, oy)
       const min = R.E * 4
       if (od < min && od > 0) {
@@ -641,7 +707,8 @@ export function stepSim(dt: number) {
       ? S.enemies.find((e) => near(e, p, R.E + 4) && !p.hits?.includes(e)) : null
     // pierce: damage the enemy but keep flying (until pierce runs out). NOT for rockets/grenades.
     if (bulletHit && p.pierce && !p.rocket) {
-      hurt(bulletHit, p.dmg, p.elem); knockback(bulletHit, p.x, p.y, p.kb)
+      hurt(bulletHit, p.dmg, p.elem, p.shieldMul);
+      knockback(bulletHit, p.x, p.y, p.kb)
       spawnParts(p.x, p.y, 4, 60, p.col)
       p.hits!.push(bulletHit)
       if (--p.pierce <= 0) p.age = 9
@@ -661,19 +728,26 @@ export function stepSim(dt: number) {
         }
       } else if (bulletHit) {
         // pellet/bullet connects with the enemy it struck
-        hurt(bulletHit, p.dmg, p.elem); knockback(bulletHit, p.x, p.y, p.kb)
+        hurt(bulletHit, p.dmg, p.elem, p.shieldMul);
+        if (bulletHit.hp>0) playAt(basicHitSound, p.x, p.y) // quiet if off-screen
+        knockback(bulletHit, p.x, p.y, p.kb)
         spawnParts(p.x, p.y, 4, 60, p.col)
-        // bounce: redirect to a new nearby enemy instead of dying, until bounces run out
+        // bounce: redirect to a new nearby enemy (or a random direction if none) instead of dying
         if (p.bounce && p.bounce > 0) {
+          p.bounce--
+          p.dmg *= .8 // 20% less damage on each subsequent hit
+          p.hits = [bulletHit] // exclude ONLY the just-hit enemy from the next hit (no twice in a row)
           const nxt = S.enemies.find((e) => e !== bulletHit && near(e, p, 90))
+          const sp = Math.hypot(p.vx, p.vy)
           if (nxt) {
-            p.bounce--
             const dx = nxt.x - p.x, dy = nxt.y - p.y, d = Math.hypot(dx, dy) || 1
-            const sp = Math.hypot(p.vx, p.vy)
             p.vx = dx / d * sp; p.vy = dy / d * sp
-            p.age = 0 // reset life so it survives to the next enemy
-            continue
+          } else {
+            const a = rnd() * Math.PI * 2 // no target: fly off in a random direction
+            p.vx = Math.cos(a) * sp; p.vy = Math.sin(a) * sp
           }
+          p.life = p.age + (p.life || 0) // extend life so it survives to the next enemy (without
+          continue                       // resetting age, which would snap its height back to the muzzle)
         }
       }
       p.age = 9 // mark for removal
@@ -694,7 +768,7 @@ export function stepSim(dt: number) {
       // target was SOLD mid-flight (no longer in the world). Uncolored energy is lost (burst it);
       // colored energy must never be lost, so re-home it to the nearest acceptor from here.
       if (!S.buildings.includes(d)) {
-        if (inCol) bounceColor(d, inCol); else spawnParts(d.x, d.y, 8, 60, col)
+        if (inCol) bounceColor(d, inCol, p.avoid, p.avoidN); else spawnParts(d.x, d.y, 8, 60, col)
         p.dst = null as never; continue
       }
       if (d.crystalCol != null) {
@@ -703,7 +777,7 @@ export function stepSim(dt: number) {
         // model steps down (N->N2->N3) and the crystal is removed once drained to 0. Energy that
         // it can't recolor (already that color, or crystal spent) just relays through unchanged.
         const canColor = d.csz! > 0 && !(inCol & d.crystalCol)
-        relay(d, canColor ? inCol | d.crystalCol : inCol, p.avoid) // recolor only if it can; else pass through
+        relay(d, canColor ? inCol | d.crystalCol : inCol, p.avoid, p.avoidN) // recolor only if it can; else pass through
         if (canColor && --d.csz! <= 0) S.buildings = S.buildings.filter((b) => b !== d)
         else if (canColor) d.ek = ekOf(d.csz!)
       } else if (inCol && towerRoom(d)) {
@@ -712,6 +786,7 @@ export function stepSim(dt: number) {
         ;(d.cols = d.cols || []).push(COLIDX[inCol])
         applyCols(d)
         spawnParts(d.x, d.y, 10, 70, col) // absorb burst in the orb's color
+        playAt(towerAbsorbEnergySound, d.x, d.y)
       } else if (wants(d) && !inCol) {
         feed(d) // consumer keeps UNCOLORED energy (charge/build); colored energy is never eaten
       // otherwise it's a finished link (forward), or a miner/tower that filled up while the
@@ -723,7 +798,7 @@ export function stepSim(dt: number) {
         // circulate forever. COLORED energy is never burned (it's precious): it always relays on,
         // overloaded or not, so it can never be lost.
         if (d.t === 'L' && !inCol && (d.load = (d.load || 0) + 1) > LINK_MAX) { spawnParts(d.x, d.y, 8, 60, col); continue }
-        relay(d, inCol, p.avoid) // carry color through regular links; avoid pushes ejected energy on
+        relay(d, inCol, p.avoid, p.avoidN) // carry color through regular links; avoid pushes ejected energy on
       }
       p.dst = null as unknown as Building // handled once
     }
@@ -740,4 +815,7 @@ export function stepSim(dt: number) {
     q[4] -= dt * 4
   }
   S.parts = S.parts.filter((q) => q[4] > 0)
+  // fade railgun rays out (life 1 -> 0 over ~0.5s), then drop the dead ones
+  for (const r of S.rays) r[4] -= dt * 2
+  S.rays = S.rays.filter((r) => r[4] > 0)
 }

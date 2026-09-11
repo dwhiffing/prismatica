@@ -52,7 +52,7 @@ export const toggleMute = () => {
   S.muteState = (S.muteState + 1) % 3
   localStorage.m = S.muteState // persist across sessions
   zzfxV = S.muteState === 0 ? 0 : 0.3
-  if (musicGain) musicGain.gain.value = S.muteState === 2 ? 1 : 0 // music only in "all sound"
+  if (musicGain) musicGain.gain.value = S.muteState === 2 ? .18 : 0 // music only in "all sound" (quiet)
 }
 
 // ── Procedural ambient score ────────────────────────────────────────────────
@@ -107,7 +107,7 @@ let ciRef = { c: 0 }
 export const playMusic = () => {
   const mg = musicGain = zzfxX.createGain()
   mg.connect(zzfxX.destination)
-  mg.gain.value = S.muteState === 2 ? 1 : 0 // music only in "all sound"
+  mg.gain.value = S.muteState === 2 ? .18 : 0 // music only in "all sound" (quiet)
   const drumBus = zzfxX.createGain()
   drumBus.gain.value = DRUMVOL
   drumBus.connect(mg)

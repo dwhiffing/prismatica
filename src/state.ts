@@ -25,6 +25,8 @@ export const S = {
   // colorBitmask]. Staggered so the released orbs don't all fire at once. Drained in stepSim.
   emits: [] as [number, Building, number][],
   shots: [] as Shot[], // flying tower projectiles (bullets & rockets; lasers are instant)
+  // instant hitscan rays (railgun): [x1, y1, x2, y2, life, "r,g,b"]; life 1 -> 0 as the beam fades.
+  rays: [] as [number, number, number, number, number, string][],
   // generic particles: [x, y, vx, vy, life, "r,g,b", size?, rise?] in world space; life 1 -> 0
   // as it fades. 7th elem scales the drawn glow (default 1; big for rocket explosions). 8th (rise)
   // = affliction ambience particle that floats UP the screen as it fades.

@@ -27,12 +27,10 @@ declare const MINIMAP: boolean
 declare const FOG: boolean
 import { ENTITIES, type Entity } from './models'
 import { LT, S, SUN, V, X } from './state'
-import { wepRng } from './sim'
+import { canFireE, wepRng } from './sim'
 import { intro, INTRO_HOLD, isMenu, trans } from './game'
 import type { Enemy, Face, V3 } from './types'
 
-// link color-filter tint, indexed by the filter bitmask (0=any/yellow, 1=B, 2=G, 4=R)
-const FILTCOL = ['#ee4', '#48f', '#4f6', , '#f44']
 // upgrade-orb color by color-index 0..6: green, red, blue, yellow, cyan, magenta, white.
 // PIPCOL = hex (pips + body tint); PIPRGB = "r,g,b" (for glow, which wants an rgb string).
 const PIPCOL = ['#4f6', '#f44', '#48f', '#ee4', '#4ff', '#f4f', '#fff']
@@ -319,11 +317,13 @@ export function render() {
   // the radius. Defined at render scope (above the model pass) so the tower BONUS aura can paint
   // BEHIND the towers; the later pulse/beam/miner glows reuse it.
   const rad = 7 * S.ZOOM // glow radius (shared by chain beams, energy pulses, miner lasers)
-  const glow = (ax: number, ay: number, c: string, k = 1, sc = 1) => {
+  // core: if given, hold FULL opacity out to that radius fraction (a solid-core look, for bounce
+  // bullets); otherwise the default soft falloff (0.2·k at 23% of the radius).
+  const glow = (ax: number, ay: number, c: string, k = 1, sc = 1, core = 0) => {
     const r = rad * sc
     const grd = X.createRadialGradient(ax, ay, 0, ax, ay, r)
     grd.addColorStop(0, `rgba(${c},${k})`)
-    grd.addColorStop(0.23, `rgba(${c},${0.2 * k})`)
+    grd.addColorStop(core || 0.23, `rgba(${c},${core ? k : 0.2 * k})`)
     grd.addColorStop(1, `rgba(${c},0)`)
     X.fillStyle = grd
     X.fillRect(ax - r, ay - r, r * 2, r * 2)
@@ -339,7 +339,7 @@ export function render() {
           X.fillStyle = b.crystalCol === 4 ? '#f66' : b.crystalCol === 2 ? '#6f6' : '#66f'
           X.beginPath(); X.arc(sx, sy, 3, 0, 7); X.fill()
         } else if (b.t === 'T') { // any tower: 3 SPEC dots (downward triangle) — empty slots white border
-          const [sx, sy] = iso(b.x, 20, b.y), orbs = [b.weapon, b.elem, b.bonus] // at the muzzle (shoot height)
+          const [sx, sy] = iso(b.x, 20, b.y), orbs = [b.weapon, b.bonus, b.elem] // absorption order: weapon, bonus, element
           // slot 0/1 on top (left/right), slot 2 centered below (same style as the selected-tower pips)
           const pos: [number, number][] = [[-5, -5], [5, -5], [0, 5]]
           X.lineWidth = 1
@@ -373,7 +373,7 @@ export function render() {
     // as an on-ground pool at the base (squashed 40% vertically), and the WEAPON (1st orb) color
     // as a glow up at the muzzle — where the laser fires from (height 20).
     for (const b of buildings)
-      if (b.t === 'T') {
+      if (b.t === 'T' && canFireE(b)) { // towers without enough energy to fire cast no ambient glow
         if (b.bonus != null) {
           const [ax, ay] = g(b.x, b.y, 0)
           X.save(); X.translate(ax, ay); X.scale(1, .6) // 40% vertical squash into a ground pool
@@ -390,14 +390,14 @@ export function render() {
     for (const b of buildings)
       if (b.bp == null && onScreen(b))
         entityFaces(ENTITIES[b.ek ?? b.t], b.x, b.y, 1, faces,
-          // overloaded link flashes red; a link is tinted by its color filter (yellow=any,
-          // R/G/B). A TOWER tints per spline: spline 0 by its ELEMENT color (2nd orb), spline 1 by
-          // its WEAPON color (1st orb); further splines keep their own color. Others: own color.
+          // overloaded link flashes red; a link is tinted yellow. A TOWER tints per spline: spline 0
+          // by its ELEMENT color (2nd orb), spline 1 by its WEAPON color (1st orb); further splines
+          // keep their own color. Others: own color.
           b.crystalCol != null ? (b.crystalCol === 4 ? '#f66' : b.crystalCol === 2 ? '#6f6' : '#66f')
             : b.load! > LINK_MAX ? '#f33'
-            : b.t === 'L' ? FILTCOL[b.filt || 0]
+            : b.t === 'L' ? '#ee4'
             // spline 0 = element color, darkened (50% brightness); spline 1 = weapon color
-            : b.t === 'T' ? [b.elem != null ? mixHex(PIPCOL[b.elem], '#000', .5) : undefined, b.weapon != null ? PIPCOL[b.weapon] : undefined] : undefined,
+            : b.t === 'T' ? [b.elem != null ? mixHex(PIPCOL[b.elem], '#000', .5) : undefined, mixHex(b.weapon != null ? PIPCOL[b.weapon] : '#ffc88c', '#000', canFireE(b) ? 1 : .35)] : undefined,
           b.t === 'M' && starved(b) ? '#a4f' : undefined, b.ry)
     for (const e of enemies)
       // fast enemies face their heading (e.face); all others spin (spin·t).
@@ -449,7 +449,8 @@ export function render() {
     }
 
     const pf: Face[] = []
-    entityFaces(ENTITIES[S.tool], p.x, p.y, 1, pf, ok ? undefined : '#844')
+    // tower preview: tip (spline 1) uses the uncolored-energy color, matching a placed uncolored tower
+    entityFaces(ENTITIES[S.tool], p.x, p.y, 1, pf, ok ? (S.tool === 'T' ? [undefined, '#ffc88c'] : undefined) : '#844')
     pf.sort((a, b) => a.d - b.d)
     X.globalAlpha = 0.45
     for (const f of pf) fillFace(f)
@@ -479,7 +480,7 @@ export function render() {
   // energy pulses: colored glowing orbs — color encodes the energy's RGB bitmask.
   // Index 0 = uncolored (warm dim white), 1-7 = B/G/GB/R/RB/RG/RGB via bitmask.
   const PCOLS = [
-    ['255,200,140', 1, 0.65], // 0: uncolored
+    ['255,200,140', 1, 0.4], // 0: uncolored (~44% more transparent than colored)
     ['20,90,255', 1, 1],     // 1: B
     ['62,255,62', 1, 1],     // 2: G
     ['0,255,255', 1, 1],     // 3: GB/cyan
@@ -505,8 +506,8 @@ export function render() {
   // alpha and the muzzle/impact glow.
   for (const b of buildings)
     if (b.t === 'T' && b.beamA && b.beamA > 0.01 && b.fx) {
-      const hex = b.elem != null ? PIPCOL[b.elem] : '#f22'
-      const rgb = b.elem != null ? PIPRGB[b.elem] : '255,40,40'
+      const hex = b.elem != null ? PIPCOL[b.elem] : '#ffc88c' // uncolored-energy color when no element
+      const rgb = b.elem != null ? PIPRGB[b.elem] : '255,200,140'
       const [ax, ay] = g(b.x, b.y, 20), [bx, by] = g(b.fx.x, b.fx.y, 7)
       X.strokeStyle = hex; X.lineWidth = 4; X.globalAlpha = b.beamA
       glow(ax, ay, rgb, b.beamA, 1.3) // muzzle glow
@@ -535,6 +536,15 @@ export function render() {
         glow(ax, ay, '180,110,255')
       }
     }
+  // railgun rays: an instant hitscan beam from tower to max range that fades out (life 1 -> 0).
+  for (const r of S.rays) {
+    const [ax, ay] = g(r[0], r[1], 20), [bx, by] = g(r[2], r[3], 7)
+    X.strokeStyle = `rgb(${r[5]})`; X.lineWidth = 3; X.globalAlpha = r[4]
+    glow(ax, ay, r[5], r[4], 1.1) // muzzle flash
+    beam(ax, ay, bx, by)
+    X.globalAlpha = 1
+  }
+  X.lineWidth = 2
   // enemy health bar: ONE bar above each enemy. Red HP fill (hp/hp0) over a dark track, with
   // the cyan shield drawn as a LAYER ON TOP of it (sh/sh0, same bar). Hidden at full hp & no
   // shield so undamaged normals stay clean; hidden when zoomed out to DOTS or on the title.
@@ -547,17 +557,16 @@ export function render() {
     X.fillStyle = '#f44'; X.fillRect(bx, cy, w * Math.max(0, e.hp) / (e.hp0 || 1), 3) // hp
     if (e.sh! > 0) { X.fillStyle = '#4ff'; X.fillRect(bx, cy, w * e.sh! / e.sh0!, 3) } // shield on top
   }
-  // tower energy: a single subtle yellow bar (enemy-health-bar style), only for the SELECTED
-  // tower and only while below full charge. One layer over a dark track — no ground ring.
-  {
-    const b = S.sel
-    if (b && b.t === 'T' && b.bp == null && b.e < CHARGE && onScreen(b)) {
+  // tower energy: a subtle yellow bar (enemy-health-bar style) over a dark track, shown for EVERY
+  // finished tower while below full charge — so a just-built tower shows its meter right away and
+  // you can watch it charge (and lasers show their drain/recharge as they fire).
+  X.globalAlpha = 1
+  for (const b of buildings)
+    if (b.t === 'T' && b.bp == null && b.e < CHARGE && onScreen(b)) {
       const [cx, cy] = g(b.x, b.y, 26), bx = cx - 7
-      X.globalAlpha = 1
-      X.fillStyle = '#430'; X.fillRect(bx, cy, 14, 3)                    // dark track
+      X.fillStyle = '#960'; X.fillRect(bx, cy, 14, 3)                 // dark track (20% lighter than #430)
       X.fillStyle = '#fe4'; X.fillRect(bx, cy, 14 * b.e / CHARGE, 3)     // yellow energy
     }
-  }
   // spec pips: 3 slots above the SELECTED tower (only) showing its absorbed colors. Each FILLED
   // slot (weapon / element / bonus, in the tower's current perm order) is tinted by that color;
   // empty slots are gray. Tapping F reorders which color sits in which. (Zoomed-out DOTS mode
@@ -566,7 +575,7 @@ export function render() {
   {
     const b = S.sel
     if (!DOTS && b && b.t === 'T' && b.bp == null) {
-      const orbs = [b.weapon, b.elem, b.bonus] // color-index (0..6) per slot (undefined = empty)
+      const orbs = [b.weapon, b.bonus, b.elem] // absorption order: weapon, bonus, element (undefined = empty)
       const [cx, cy] = g(b.x, b.y, 30)
       // downward triangle: slots 0/1 on top, 2 below-center. Filled slots draw solid in their
       // color; empty slots draw as a white outline (border) instead.
@@ -584,16 +593,21 @@ export function render() {
   for (const s of S.shots) {
     // launch from the TOP of the tower (~20) like the laser, then settle to the projectile's
     // travel height over the first ~0.15s so it reads as fired from the muzzle, not the base.
-    const base = s.rocket ? 8 : 5, h = base + (20 - base) * Math.max(0, 1 - s.age / .15)
+    // ease from muzzle height (20) down to travel height over the first ~36 world-units of FLIGHT
+    // (distance-based, not time-based) so slow bullets descend at the same angle as fast ones.
+    const base = s.rocket ? 8 : 5, travelled = Math.hypot(s.vx, s.vy) * s.age
+    const h = base + (20 - base) * Math.max(0, 1 - travelled / 36)
     const [sx, sy] = g(s.x, s.y, h)
-    let a = 1, sc = s.rocket ? (s.big ? 1 : 0.8) : 0.5
+    // bounce: starts at .6, shrinking a diminishing amount per hit (.85^hits, hits = 4 - remaining)
+    let a = 1, sc = s.rocket ? (s.big ? 1 : 0.8) : s.bounce ? .6 * .85 ** (4 - s.bounce) : 0.5
     if (s.sz) {
       // flame puff: translucent, grows small->big over its life, then fades to 0 after 80%.
       const f = Math.min(1, s.age / (s.life || 1))
       sc = s.sz * (0.25 + 0.75 * f) // small -> big
       a = .35 * (f < 0.8 ? 1 : (1 - f) / 0.2) // low opacity; full then fade over the last 20%
     }
-    glow(sx, sy, s.col, a, sc)
+    // bounce bullet: a bigger solid core (full color out to 40% of the radius) reads as mostly core
+    glow(sx, sy, s.col, a, sc, s.bounce ? 0.4 : 0)
   }
   // generic particles: little glows fading as they fly out (mining sparks, explosions, smoke).
   // An affliction "rise" particle (q[7]) floats UP as it fades — its draw height climbs with age.

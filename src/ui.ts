@@ -2,6 +2,8 @@
 import { COST } from './constants'
 import { H, S } from './state'
 import type { BType } from './types'
+import { zzfx } from './zzfx'
+import { changeSpeedSound, deselectBuildingTypeSound, selectBuildingTypeSound } from './sounds'
 
 const TOOLS: [BType, string][] = [
   ['S', 'Solar'],
@@ -26,13 +28,23 @@ export function drawUI() {
 H.onclick = (e: MouseEvent) => {
   const k = (e.target as HTMLElement).dataset.t
   if (!k) return // readouts / gaps have no data-t
-  if (k === 's') S.speed = (S.speed+1) % 4 // cycle speed
-  else if (k === 'd') S.mode = S.mode === 'sell' ? 'select' : 'sell' // toggle sell mode
-  else if (S.mode === 'build' && S.tool === k) S.mode = 'select' // toggle off
-  else {
+   // cycle speed
+  if (k === 's') {
+    S.speed = (S.speed+1) % 4
+    zzfx(...changeSpeedSound(140+S.speed*140)) // deselect sound
+  }
+  else if (k === 'd') {
+    // toggle sell mode
+    S.mode = S.mode === 'sell' ? 'select' : 'sell' 
+    zzfx(...(S.mode === 'select' ? deselectBuildingTypeSound : selectBuildingTypeSound))
+  } else if (S.mode === 'build' && S.tool === k) {
+    S.mode = 'select' // toggle off
+    zzfx(...deselectBuildingTypeSound) // deselect sound
+  } else {
     S.tool = k as BType
     S.mode = 'build'
     S.sel = null
+    zzfx(...selectBuildingTypeSound) // picked a build tool
   }
   drawUI()
 }

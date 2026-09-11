@@ -25,7 +25,7 @@ const RESERVE = new RegExp('^(' + [
   // canvas / dom element + window + events
   'width', 'height', 'getElementById', 'getContext', 'createElement', 'innerHTML', 'onclick', 'dataset',
   'appendChild', 'remove', 'cssText', 'body', 'opacity',
-  'target', 'style', 'clientX', 'clientY', 'button', 'key', 'shiftKey', 'pointerId', 'pointerType',
+  'target', 'style', 'clientX', 'clientY', 'button', 'key', 'shiftKey', 'pointerId',
   'setPointerCapture', 'releasePointerCapture', 'preventDefault', 'deltaY',
   'onpointerdown', 'onpointermove', 'onpointerup', 'onpointercancel', 'onpointerleave', 'oncontextmenu',
   'onwheel',
