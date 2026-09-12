@@ -184,7 +184,7 @@ let downX = 0,
 // zoom-drag — dragging up zooms in, down zooms out, about the press point. lastUp = time of the
 // last pointerup; zoomDrag = true while a zoom-drag is in progress; zoomY0 = the press's screen Y.
 let lastUp = -1, zoomDrag = false, zoomY0 = 0
-const DBL_MS = 150
+const DBL_MS = 280 // double-tap window (ms); generous so a real mobile double-tap reliably registers
 let chainSrc: Building | null = null // link/tower the current drag started on (drag-to-chain)
 let lastBuilt: { x: number; y: number } | null = null // last spot a drag-line building was placed
 // pressing on an ALREADY-SELECTED tower arms this hold-timer: a long press (500ms) ejects the
