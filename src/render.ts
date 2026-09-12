@@ -3,6 +3,7 @@ import {
   BUILD,
   CHARGE,
   COST,
+  DEV_FEATURES,
   LINK_MAX,
   LINK_RANGE,
   LOD_ZOOM,
@@ -612,7 +613,7 @@ export function render() {
   // fog of war: one dark shape covering the screen with a circular CUTOUT at each
   // building, filled even-odd so the already-drawn world shows through the holes and only
   // the unrevealed area is darkened. REVEAL is a world distance, so scale by zoom.
-  if (FOG && !(DEVTOOLS && S.noFog)) {
+  if (FOG && !(DEVTOOLS && DEV_FEATURES && S.noFog)) {
     // Fog of war tied to LIVING buildings: each frame, punch a soft circular cutout at every
     // finished building's current position out of a black offscreen buffer (destination-out, so
     // overlaps merge cleanly), then blit it over the scene. Sight follows your buildings — sell

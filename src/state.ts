@@ -61,7 +61,7 @@ export const SPAWN: Pt = { x: 0, y: 0 } // player origin
 // sites in lighting.ts / render.ts, since the dev Leva panel that tuned them is gone.
 //  - dayT: 0..1 time of day (0=midnight, .25=dawn, .5=noon, .75=dusk)
 export const LT = {
-  dayLen: 60, // full cycle at UNIFORM rate; day is stretched 3x (see the dayT advance in game.ts)
+  dayLen: 100, // full cycle at UNIFORM rate; day is stretched 3x (see the dayT advance in game.ts)
   dayT: 0.35,
   // resource crystal patch generation (sunflower layout, read by reset() in game.ts)
   patchN: 150, // total number of patches in the world

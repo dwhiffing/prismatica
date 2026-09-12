@@ -1,6 +1,7 @@
 import {
   BUILD,
   COST,
+  DEV_FEATURES,
   DEV_SKIP_TITLE,
   LINK_RANGE,
   MAX_ZOOM,
@@ -192,7 +193,7 @@ let lastBuilt: { x: number; y: number } | null = null // last spot a drag-line b
 let towerHold: ReturnType<typeof setTimeout> | null = null
 // place one building of the current tool if affordable and not blocked; true if placed
 const tryBuild = (x: number, y: number, shift = true) => {
-  const free = DEVTOOLS && S.free // dev free mode: no cost, instant build
+  const free = DEVTOOLS && DEV_FEATURES && S.free // dev free mode: no cost, instant build
   if ((!free && S.resource < COST[S.tool]) || !canPlace(S.tool, x, y)) return false
   if (!free) S.resource -= COST[S.tool]
   S.buildings.push(mkB(S.tool, x, y, free ? undefined : BUILD[S.tool])) // bp undefined = finished instantly
@@ -414,7 +415,7 @@ function loop(now: number) {
   // advance the day/night clock, but move 3x SLOWER through the daytime half (dayT .25..75, sun
   // up) so days last 3x longer while nights keep their length.
   const day = LT.dayT > .25 && LT.dayT < .75
-  LT.dayT = (LT.dayT + sdt / LT.dayLen * (day ? 1 / 3 : 1)) % 1
+  LT.dayT = (LT.dayT + sdt / LT.dayLen * (day ? 1 / 4 : 1)) % 1
 
   // interval-based (not random): spray energy through the letters every 0.25s, spawn a
   // drifting enemy for the towers every 0.8s.
@@ -444,7 +445,7 @@ function loop(now: number) {
 // SKIPTITLE (injected by bundle.js): true in dev to boot straight into the game, skipping the
 // title/menu. Injected as a literal so the dead branch folds away entirely in release.
 declare const SKIPTITLE: boolean
-if (SKIPTITLE && DEV_SKIP_TITLE) { isMenu = false; LT.dayT = .35; reset(); drawUI() }
+if (SKIPTITLE && DEV_FEATURES && DEV_SKIP_TITLE) { isMenu = false; LT.dayT = .35; reset(); drawUI() }
 else titleScreen()
 requestAnimationFrame(loop)
 // dev: expose reset() on window as regen() to re-run world generation from the console
@@ -457,7 +458,7 @@ if (DEV) (globalThis as any).regen = reset
 // literal folds the branch away and the whole block is dead-code-eliminated from the build,
 // so nothing here ships. Add more dev shortcuts inside this handler.
 declare const DEVTOOLS: boolean
-if (DEVTOOLS) {
+if (DEVTOOLS && DEV_FEATURES) {
   addEventListener('keydown', (ev: KeyboardEvent) => {
     // Tab: jump to the next wave (spawns its roster immediately)
     if (ev.key === 'Tab') { ev.preventDefault(); startWave(S.wave + 1); return }

@@ -43,6 +43,10 @@ export const CHARGE = 5 // energy a miner/tower stores at full charge
 export const TOWER_GAIN = .5 // power a tower gains per delivered energy unit (so it takes several)
 export const NODE_AMT = 250 // starting resources in a crystal node
 export const ENEMIES = true // master switch: set false to disable enemy spawns
+// DEV ONLY master switch: set false to turn OFF every dev-mode feature in a dev build — the debug
+// keys, free/fog toggles, AND booting straight into the game — so the dev build behaves like release
+// (shows the title, no debug shortcuts). No effect on release, which never has these anyway.
+export const DEV_FEATURES = false
 // DEV ONLY: set false to boot to the TITLE even in a dev build (overrides SKIPTITLE). No effect on
 // release, which always shows the title. Flip this instead of editing bundle.js.
 export const DEV_SKIP_TITLE = false
