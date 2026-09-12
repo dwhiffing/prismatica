@@ -296,7 +296,7 @@ export function render() {
   //  - LOD dots: when zoomed far out, everything draws as a flat colored dot instead of a
   //    3D mesh, and shadows are skipped — a lathed mesh + shade() + global depth-sort per
   //    entity is wasted when each is only a few pixels.
-  const DOTS = S.ZOOM < LOD_ZOOM
+  const DOTS = S.ZOOM < LOD_ZOOM && !isMenu // never drop to dot-mode on the title (it's zoomed way out)
   // range rings: only for the selected building (placement preview shows its own).
   if (S.sel) drawRanges(S.sel.t, S.sel.x, S.sel.y, 0.5, S.sel.t === 'T' ? wepRng(S.sel) : 1)
   // construction progress ring (green chunks). Silhouette outlines (selected crystal +
