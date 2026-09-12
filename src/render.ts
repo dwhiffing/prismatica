@@ -349,7 +349,6 @@ export function render() {
     X.globalAlpha = 1
   } else {
     // cast drop shadows: collect every silhouette into ONE path, then fill once so
-    // cast drop shadows: collect every silhouette into ONE path, then fill once so
     // overlapping shadows merge into a single flat region (no darker overlaps).
     X.fillStyle = '#000'
     X.globalAlpha = 0.2 + 0.06 * SUN.up // shAlpha 0.2

@@ -85,7 +85,7 @@ const mkB = (t: BType, x: number, y: number, bp?: number): Building => ({ t, x, 
 const lineTool = () => S.mode === 'build' && S.tool === 'L'
 
 const VARIANTS: [EType, number][] = [['rockSmall', NODE_AMT * 0.35], ['rockMedium', NODE_AMT * 0.65], ['rockMedium', NODE_AMT * 0.65], ['rockLarge', NODE_AMT]]
-const CRYSTALS = 400 // color crystals scattered across the map at world reset
+const CRYSTALS = 900 // color crystals scattered across the map at world reset (density +50%)
 // crystal model for a given remaining size (3=big N, 2=med N2, 1=small N3)
 export const ekOf = (csz: number): EType => (['N3', 'N2', 'N'] as EType[])[csz - 1]
 // sunflower (phyllotaxis) patch layout: patch i sits at angle i·GOLDEN and radius
@@ -105,8 +105,10 @@ function spawnPatch(cx: number, cy: number) {
   }
 }
 
+// clear all transient per-world entity lists (shared by reset() and toTitle()) — each its OWN array
+const clr = () => { S.enemies = []; S.pulses = []; S.parts = []; S.shots = []; S.emits = [] }
 function reset() {
-  S.enemies = []; S.pulses = []; S.parts = []; S.shots = []; S.emits = []; S.resource = 70; S.t = 0
+  clr(); S.resource = 70; S.t = 0
   S.wave = 0; S.queue = []; S.spawnT = 0; S.won = 0
   SPAWN.x = V.W / 2; SPAWN.y = V.Hh / 2; S.camX = SPAWN.x; S.camY = SPAWN.y
   S.ZOOM = MAX_ZOOM // start fully zoomed in
@@ -122,7 +124,7 @@ function reset() {
   const wr = LT.patchSpacing * (LT.patchN - 1) ** 0.7 + LT.patchSpread
   for (let i = 0; i < CRYSTALS; i++) {
     const rad = 160 + (wr - 160) * (i / CRYSTALS) ** 0.85, a = i * GOLDEN
-    const csz = Math.min(3, 1 + (rad / wr * 3 | 0)) // 1 near spawn -> 3 at the rim
+    const csz = Math.min(3, 1 + ((rad / wr) ** .45 * 3 | 0)) // 1 near spawn -> 3 at the rim; **.45 curve reaches big sizes MUCH closer to spawn
     S.buildings.push({ ...mkB('L', SPAWN.x + Math.cos(a) * rad, SPAWN.y + Math.sin(a) * rad),
       crystalCol: [4, 2, 1][i % 3], csz, ek: ekOf(csz) })
   }
@@ -137,8 +139,8 @@ function reset() {
 // tear the game world down and rebuild the title screen (used on game over, under the black
 // fade). Mirrors the fresh-load path: origin-centered camera, empty world, then titleScreen().
 function toTitle() {
-  S.enemies = []; S.pulses = []; S.parts = []; S.shots = []; S.emits = []; S.buildings = []; S.nodes = []
-  S.sel = null; S.mode = 'select'; S.mouse = null; S.chainFrom = null
+  clr(); S.buildings = []; S.nodes = []
+  S.sel = null; S.mode = 'select'; S.mouse = null; S.chainFrom = null; S.speed = 1
   SPAWN.x = SPAWN.y = S.camX = S.camY = 0
   // reset input state: game over can fire mid-press (selling the last building), and a stale
   // `dragging`/hold-timer would carry into the next game as a "sticky" cursor.

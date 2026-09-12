@@ -60,7 +60,8 @@ export function spawnParts(x: number, y: number, n: number, spd: number, col: st
 // pan away from goes silent. Distance is world units × zoom (screen px), framing-relative.
 function centerVol(x: number, y: number) {
   const d = Math.hypot(x - S.camX, y - S.camY) * S.ZOOM // world dist -> screen px from center
-  return Math.max(0, 1 - d / (V.W / 2))
+  // also fade OUT as the camera zooms out: full at MAX_ZOOM (3), silent at zoom <= 1 (strategic view).
+  return Math.max(0, 1 - d / (V.W / 2)) * Math.max(0, Math.min(1, (S.ZOOM - 1) / 2))
 }
 // play a positional sound (a zzfx param array) at world (x,y): its volume (param 0) is scaled by
 // proximity to screen center, and it's skipped entirely once fully off-screen (silent). On the
@@ -218,11 +219,11 @@ const EKIND: [number, number, number, number][] = [
 // kind, starting from wave, base count, per wave increment
 // kinds: 0 normal, 1 shield, 2 shielder, 3 fast(swarm), 4 summoner, 5 boss.
 const WAVES: [number, number, number, number][] = [
-  [0, 1, 1, 1],   // normals — the staple, always present, grows steadily
-  [1, 15, 1, .5],  // shielded from wave 4
-  [3, 25, 1, .2],   // fast swarms from wave 2 (each spawns 4)
+  [0, 1, 1, .5],   // normals — the staple, always present, grows steadily
+  [1, 20, 1, .3],  // shielded from wave 4
+  [3, 25, 1, .15],   // fast swarms from wave 2 (each spawns 4)
   [2, 30, 1, .2],   // shielders from wave 6
-  [4, 40, 1, .2],  // summoners from wave 9
+  [4, 35, 1, .2],  // summoners from wave 9
   [5, 50, 1, 0],  // boss on wave 50 (rare, slow ramp)
 ]
 // build the list of enemy kinds to spawn for wave `n` (n >= 1), from the WAVES table.
@@ -241,7 +242,7 @@ export function spawnEnemy(k = 0, x?: number, y?: number) {
     // (min 500 so an empty/tight base still spawns them off-screen).
     let far = 200
     for (const b of S.buildings) if (b.crystalCol == null) far = Math.max(far, Math.hypot(b.x - SPAWN.x, b.y - SPAWN.y))
-    const a = rnd() * Math.PI * 2, r = far + 150
+    const a = rnd() * Math.PI * 2, r = far + 175
     x = SPAWN.x + Math.cos(a) * r; y = SPAWN.y + Math.sin(a) * r
   }
   const swarm = k === 3 ? 4 : 1 // fast enemies come in swarms
@@ -458,7 +459,7 @@ const WEP: Weapon[] = [
   { rng: 1, cd: .2, dmg: 1.5, eng: .15, fire: fireMG },                           // 2 blue — machine gun (cheap, rapid, longer range)
   { rng: .9, cd: 1.5, dmg: 12, eng: 3, tgt: 1, fire: fireRail },                   // 3 yellow — railgun (pierce, slow, high energy)
   { rng: .8, cd: 1.8, dmg: 6, eng: .6, fire: fireBounce },                          // 4 cyan — bouncing (cheap)
-  { rng: 2, cd: 2, dmg: 5, eng: 2, tgt: 1, fire: (b, e, dmg) => rocket(b, e, dmg, KB_ROCKET * .35, true, '255,120,255') }, // 5 magenta — homing rocket
+  { rng: 1.6, cd: 2, dmg: 5, eng: 2, tgt: 1, fire: (b, e, dmg) => rocket(b, e, dmg, KB_ROCKET * .35, true, '255,120,255') }, // 5 magenta — homing rocket
   { rng: .9, cd: .4, dmg: 10, eng: 1, tgt: 3, beam: true, chain: 60, chainN: 3 }, // 6 white — chain laser: beam walks target->nearest->nearest, up to chainN hops of chain range
 ]
 // a tower's stats: its upgraded weapon, or the peashooter default.
@@ -662,8 +663,6 @@ export function stepSim(dt: number) {
       o.sh0 = EKIND[1][1] // give it a shield capacity so the bar/tint reads
       o.sh = Math.min(EKIND[1][1], (o.sh || 0) + 1.5 * dt)
     }
-    // SUMMONER (k=4): spawn a fast-enemy swarm every ~3s at its position.
-    if (e.k === 4) { e.ai = (e.ai || 0) - dt; if (e.ai <= 0) { e.ai = 3; spawnEnemy(3, e.x, e.y) } }
     if (!e.target || e.target.dead || !S.buildings.includes(e.target)) e.target = pickTarget()
     const tg = e.target
     if (!tg) continue
@@ -673,6 +672,9 @@ export function stepSim(dt: number) {
     if (e.k === 5) { e.ai = ((e.ai || 0) + dt) % 2; if (e.ai > 1) spd = 0 }
     // SUMMONER (k=4): hangs back — stops advancing once fairly close to the NEAREST tower.
     if (e.k === 4 && S.buildings.some((o) => o.t === 'T' && Math.hypot(o.x - e.x, o.y - e.y) < 100)) spd = 0
+    // SUMMONER (k=4): spawn a fast-enemy swarm every ~3s, but ONLY while STANDING STILL (spd 0,
+    // i.e. hung back near a tower) — a moving summoner doesn't summon.
+    if (e.k === 4 && !spd) { e.ai = (e.ai || 0) - dt; if (e.ai <= 0) { e.ai = 3; spawnEnemy(3, e.x, e.y) } }
     const dx = tg.x - e.x,
       dy = tg.y - e.y,
       d = Math.hypot(dx, dy) || 1

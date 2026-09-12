@@ -14,7 +14,7 @@ const RESERVE = new RegExp('^(' + [
   'length', 'min', 'max', 'abs', 'sin', 'cos', 'tan', 'atan2', 'sqrt', 'hypot', 'sign', 'floor',
   'round', 'ceil', 'PI', 'SQRT2', 'random', 'from', 'push', 'pop', 'map', 'filter',
   'some', 'find', 'findIndex', 'sort', 'includes', 'slice', 'splice', 'indexOf', 'set',
-  'forEach', 'split', 'join', 'concat', 'reverse', 'get', 'toString', 'isArray', // Array/String/WeakMap methods
+  'forEach', 'split', 'join', 'concat', 'reverse', 'get', 'toString', 'isArray', 'flatMap', // Array/String/WeakMap methods
   // canvas 2d context + gradients/patterns
   'fillStyle', 'strokeStyle', 'lineWidth', 'globalAlpha', 'globalCompositeOperation',
   'beginPath', 'closePath', 'moveTo', 'lineTo', 'stroke', 'fill', 'fillRect',
@@ -87,7 +87,7 @@ export async function bundle({ minify = true } = {}) {
     // dev (it's slow and would obscure stack traces). Set ROADROLLER=0 to bypass for debugging.
     if (process.env.ROADROLLER !== '0') {
       const packer = new Packer([{ data: js, type: 'js', action: 'eval' }], {});
-      await packer.optimize(1);
+      await packer.optimize(3); // deeper param search than optimize(1): slower build, smaller payload
       const { firstLine, secondLine } = packer.makeDecoder();
       // Defer the Roadroller decode+eval by one frame so the browser paints once before the
       // synchronous decompression blocks the main thread (avoids a blank-screen-on-load).
