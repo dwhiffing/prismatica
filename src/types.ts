@@ -22,6 +22,8 @@ export interface Building extends Pt {
   mp?: number // miner: phase timer
   sh?: number // miner: shots left on the current energy charge
   ni?: number // round-robin index for cycling through neighbors when relaying energy
+  hist?: Building[] // tower: the buildings the colored orb it holds passed through (incl. this tower).
+  // Saved on absorption so an EJECTED orb keeps its history and routes toward towers it hasn't been in.
   sk?: number // solar night-halving toggle: emits only on ticks where this flips to 1
   route?: Building | null // forced relay target (set via 'z'); overrides round-robin
   // --- upgrade system (towers) ---

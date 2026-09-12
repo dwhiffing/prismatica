@@ -23,13 +23,10 @@ export const coneSound = [.07,.4,90,.1,.3,,4,3.9,,,,,,,,.9]
 export const enemyDestroySound = [10,,6e3,,.05,.2,4,6,,,,,,,,.1,,.5,,,-800]
 export const basicShootSound = [.3,,600,,,.05,1,1.8,-15,24,,,,.8,,,,.69,.05];
 export const mgShootSound = [.2,,250,,,.05,1,1.8,-15,24,,,,.8,,,,.69,.05]
-export const railShootSound = [.3,,600,,,.05,1,1.8,-15,24,,,,.8,,,,.69,.05];
-export const rocketShootSound = [.3,,600,,,.05,1,1.8,-15,24,,,,.8,,,,.69,.05];
-export const bounceShootSound = [.3,,600,,,.05,1,1.8,-15,24,,,,.8,,,,.69,.05];
 export const basicHitSound = [.5,0,0,,.03,.03,5,0,1,,,,,,38,.1,,.5,,,-2e3];
 
 export const energyConvertSound = [1.1,,122,.01,.03,.03,3,.4,,,,,,.1,,,.07,.87,,.04,-854]
-export const gameOverSound = [1.8,,841,.14,,.12,1,1.8,,45,79,.03,.12,,.5,,.45,.82,.33,,-1445]
+// export const gameOverSound = [1.8,,841,.14,,.12,1,1.8,,45,79,.03,.12,,.5,,.45,.82,.33,,-1445]
 
 // export const miscSounds = [
 //   // [1, , 95, 0.01, 0.01, , , 4.4, , 4, 193, 0.05, , , , , 0.28, 0.82, 0.02, 0.09], // click

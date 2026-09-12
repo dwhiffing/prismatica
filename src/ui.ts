@@ -25,12 +25,16 @@ export function drawUI() {
     `<div id=t><b>$${S.resource | 0} (+${Math.ceil(S.rps)}/s)</b><b>${wave}</b></div>`
 }
 
-H.onclick = (e: MouseEvent) => {
+// pointerdown (not click): a click needs mousedown+mouseup on the SAME node, but drawUI()
+// rebuilds the buttons via innerHTML on every press — so a fast second tap lands on a node
+// that gets replaced before its mouseup, and the click is silently dropped. pointerdown fires
+// on press alone, so rapid speed-button taps all register.
+H.onpointerdown = (e: PointerEvent) => {
   const k = (e.target as HTMLElement).dataset.t
   if (!k) return // readouts / gaps have no data-t
    // cycle speed
   if (k === 's') {
-    S.speed = (S.speed+1) % 6 // 0(paused),1,2,3,4,5x
+    S.speed = (S.speed+1) % 5 // 0(paused),1,2,3,4x
     zzfx(...changeSpeedSound(140+S.speed*140)) // deselect sound
   }
   else if (k === 'd') {

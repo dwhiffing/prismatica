@@ -355,6 +355,7 @@ C.oncontextmenu = (e: MouseEvent) => {
 }
 
 addEventListener('keydown', (e: KeyboardEvent) => {
+  if (isMenu) return // no gameplay hotkeys while the title is up
   // 1-4 pick a build tool (S/L/M/T) and enter build mode
   const ti = '1234'.indexOf(e.key)
   if (ti >= 0) {
@@ -459,6 +460,7 @@ if (DEV) (globalThis as any).regen = reset
 declare const DEVTOOLS: boolean
 if (DEVTOOLS && DEV_FEATURES) {
   addEventListener('keydown', (ev: KeyboardEvent) => {
+    if (isMenu) return // no dev hotkeys on the title either
     // Tab: jump to the next wave (spawns its roster immediately)
     if (ev.key === 'Tab') { ev.preventDefault(); startWave(S.wave + 1); return }
     if (ev.key === '.') { S.noFog = S.noFog ? 0 : 1; return } // toggle fog of war
