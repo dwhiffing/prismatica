@@ -214,9 +214,10 @@ C.onpointerdown = (e: PointerEvent) => {
   // while on the title, clicks never select/build/pan — they only kick off the start
   // transition (once).
   if (isMenu) { if (!trans) trans = 0.0001; return }
-  // DOUBLE-TAP-DRAG ZOOM (touch only — desktop zooms with the scroll wheel): a 2nd press soon
-  // after the last release starts a zoom-drag; the move handler zooms by vertical drag. Bail.
-  if (e.pointerType === 'touch' && performance.now() - lastUp < DBL_MS) {
+  // DOUBLE-TAP-DRAG ZOOM: a 2nd press soon after the last release starts a zoom-drag; the move
+  // handler zooms by vertical drag. Not gated on pointerType — real devices don't always report
+  // 'touch' reliably, and double-click-drag is a fine mouse alternative to the wheel.
+  if (performance.now() - lastUp < DBL_MS) {
     zoomDrag = true; zoomY0 = my(e); downX = mx(e); downY = my(e)
     C.setPointerCapture(e.pointerId)
     return
@@ -347,6 +348,10 @@ C.onpointerup = (e: PointerEvent) => {
 C.onpointerleave = () => {
   S.mouse = null
 }
+// real touch devices fire pointercancel (not pointerup) when the browser reclaims a touch as a
+// gesture — route it through the same release path so `lastUp` is recorded and the NEXT tap can
+// still be detected as a double-tap (emulated touch always sends pointerup, hiding this on desktop).
+C.onpointercancel = (e: PointerEvent) => { if (!isMenu) C.onpointerup!(e) }
 // right-click: cancel build mode / deselect
 C.oncontextmenu = (e: MouseEvent) => {
   e.preventDefault()
