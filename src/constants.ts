@@ -37,7 +37,7 @@ export const R: Record<EType, number> = {
   N3: 4,
   E: 5, E2: 5, E3: 5, E4: 5 // enemy kinds share a collision radius
 } // pick/collision radii
-export const COST: Record<BType, number> = { S: 40, L: 5, M: 15, T: 20 } // resource cost to place
+export const COST: Record<BType, number> = { S: 40, L: 3, M: 15, T: 20 } // resource cost to place
 export const BUILD: Record<BType, number> = { S: 25, L: 2, M: 8, T: 12 } // energy to construct
 export const CHARGE = 5 // energy a miner/tower stores at full charge
 export const TOWER_GAIN = .5 // power a tower gains per delivered energy unit (so it takes several)

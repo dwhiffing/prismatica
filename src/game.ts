@@ -13,10 +13,9 @@ import {
 import { canPlace, nearest, rnd, setSeed, unproject } from './core'
 import { computeSun } from './lighting'
 import { render } from './render'
-import { inMinimap, mmToWorld } from './minimap'
 import { deselectBuildingSound, deselectBuildingTypeSound, errorSound, placeBuildingSound, selectBuildingSound, selectBuildingTypeSound, sellBuildingSound } from './sounds'
 import { C, H, LT, resize, S, SPAWN, V } from './state'
-import { cycleSpec, devPulse, ejectSpec, relay, spawnEnemy, startWave, stepSim } from './sim'
+import { cycleSpec, devPulse, ejectSpec, releaseColors, relay, spawnEnemy, startWave, stepSim } from './sim'
 import { drawUI } from './ui'
 import { playMusic, renderMusic, toggleMute, zzfx, zzfxX } from './zzfx'
 import type { BType, Building, EType } from './types'
@@ -144,7 +143,7 @@ function toTitle() {
   SPAWN.x = SPAWN.y = S.camX = S.camY = 0
   // reset input state: game over can fire mid-press (selling the last building), and a stale
   // `dragging`/hold-timer would carry into the next game as a "sticky" cursor.
-  dragging = didDrag = mmDrag = false; chainSrc = null
+  dragging = didDrag = false; chainSrc = null
   if (towerHold != null) { clearTimeout(towerHold); towerHold = null }
   intro = 0 // replay the black fade-in (like page load) so the menu fades up from black
   isMenu = true
@@ -179,8 +178,7 @@ let downX = 0,
   panX = 0,
   panY = 0,
   dragging = false,
-  didDrag = false,
-  mmDrag = false
+  didDrag = false
 // double-click-and-drag to zoom: a 2nd press within DBL_MS of the last release starts a
 // zoom-drag — dragging up zooms in, down zooms out, about the press point. lastUp = time of the
 // last pointerup; zoomDrag = true while a zoom-drag is in progress; zoomY0 = the press's screen Y.
@@ -228,7 +226,6 @@ C.onpointerdown = (e: PointerEvent) => {
   panY = S.camY
   dragging = true
   didDrag = false
-  mmDrag = MINIMAP && inMinimap(downX, downY)
   // if the press lands on an existing link, a drag re-routes it toward another link
   // (instead of panning) — see onpointerup.
   const dp = unproject(downX, downY)
@@ -245,13 +242,6 @@ C.onpointerdown = (e: PointerEvent) => {
   // one per max-range step, as the cursor moves away.
   lastBuilt = null
   if (lineTool() && tryBuild(dp.x, dp.y)) lastBuilt = dp
-  if (mmDrag) {
-    const w = mmToWorld(downX, downY)
-    S.camX = w.x
-    S.camY = w.y
-    panX = S.camX
-    panY = S.camY
-  }
   C.setPointerCapture(e.pointerId)
 }
 C.onpointermove = (e: PointerEvent) => {
@@ -270,12 +260,6 @@ C.onpointermove = (e: PointerEvent) => {
   if (!dragging) return
   // sell mode: dragging over buildings demolishes each one it passes
   if (S.mode === 'sell') { sellAt(unproject(mx(e), my(e))); return }
-  if (mmDrag) {
-    const w = mmToWorld(mx(e), my(e))
-    S.camX = w.x
-    S.camY = w.y
-    return
-  }
   const dx = mx(e) - downX,
     dy = my(e) - downY
   if (!didDrag && dx * dx + dy * dy > 25) { didDrag = true; if (towerHold != null) { clearTimeout(towerHold); towerHold = null } } // a drag is a pan/chain, not a long-press
@@ -332,7 +316,6 @@ C.onpointerup = (e: PointerEvent) => {
   if (zoomDrag) { zoomDrag = false; lastUp = now; return }
   lastUp = now
   dragging = false
-  mmDrag = false
   S.chainFrom = null // end any preview line
   if (S.mode === 'sell') return // sell happened on down/move; nothing to do on release
   const p = unproject(mx(e), my(e))
@@ -400,7 +383,7 @@ addEventListener('keydown', (e: KeyboardEvent) => {
     drawUI()
   }
 })
-// sell `b`, refunding half its build cost. Color crystals are indestructible world fixtures and
+// sell `b`, refunding its full cost. Color crystals are indestructible world fixtures and
 // never sell. Selling a DEPLETED miner (no live crystal in range) sells EVERY depleted miner at
 // once — a one-tap cleanup of spent mining sites; any other building sells just itself.
 function sellBuilding(b: Building) {
@@ -409,7 +392,7 @@ function sellBuilding(b: Building) {
   const starved = (o: Building) => o.t === 'M' &&
     !S.nodes.some((n) => n.amt > 0 && (n.x - o.x) ** 2 + (n.y - o.y) ** 2 < MINE_RANGE ** 2)
   const doomed = starved(b) ? S.buildings.filter(starved) : [b]
-  for (const o of doomed) S.resource += COST[o.t] / 2
+  for (const o of doomed) { S.resource += COST[o.t]; if (o.t === 'T') releaseColors(o) } // full refund + give back colors
   S.buildings = S.buildings.filter((o) => !doomed.includes(o))
 }
 // sell whatever sellable building is under world point `p` (sell-mode tap/drag). Skips crystals.
@@ -467,7 +450,6 @@ requestAnimationFrame(loop)
 // dev: expose reset() on window as regen() to re-run world generation from the console
 // (DEV is defined false in the release build, so this is stripped by minification)
 declare const DEV: boolean
-declare const MINIMAP: boolean // injected by bundle.js; false => threat arrows, minimap DCE'd
 if (DEV) (globalThis as any).regen = reset
 
 // ---- dev tools (DEVTOOLS injected by bundle.js) --------------------------------------

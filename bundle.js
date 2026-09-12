@@ -60,13 +60,11 @@ export async function bundle({ minify = true } = {}) {
     ...(minify ? { mangleProps: /.*/, reserveProps: RESERVE } : {}),
     // DEV is true only for the non-minified dev build; DEV-guarded code (e.g. exposing
     // regen() on window for the console) is dead-code-eliminated from the minified release.
-    // MINIMAP: true = corner minimap, false = edge threat arrows. Injected as a literal so
-    // the unused one (and its whole module) is dead-code-eliminated. FLIP IT HERE.
     // DEVTOOLS: in-editor debug shortcuts (e.g. press 'e' to spawn an enemy at the cursor).
     // Injected as a literal so the whole dev-tools block is dead-code-eliminated when off.
     // Defaults on for the dev build, off for release; flip the release value here to test.
     // SKIPTITLE: dev boots straight into the game (skips the title/menu); always false in release.
-    define: { DEV: String(!minify), MINIMAP: 'false', FOG: 'true', DEVTOOLS: String(!minify), SKIPTITLE: String(!minify) },
+    define: { DEV: String(!minify), FOG: 'true', DEVTOOLS: String(!minify), SKIPTITLE: String(!minify) },
     write: false,
   });
   let js = res.outputFiles[0].text.trim();

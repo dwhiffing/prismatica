@@ -18,11 +18,6 @@ import type { BType } from './types'
 import { GTS, makeGround } from './ground'
 import { hull, meshOf, norm, rotate } from './geometry'
 import { shade } from './lighting'
-import { drawMinimap } from './minimap'
-import { drawThreat } from './threat'
-// off-screen awareness toggle, injected by bundle.js (esbuild `define`). true = corner
-// minimap, false = edge threat arrows. As a literal, the dead branch + module DCE out.
-declare const MINIMAP: boolean
 // fog-of-war toggle, injected by bundle.js. As a literal, the whole fog pass DCEs when off.
 declare const FOG: boolean
 declare const DEVTOOLS: boolean // dev builds only: debug toggles (folds to false + DCEs in release)
@@ -417,7 +412,7 @@ export function render() {
     const p = unproject(S.mouse.x, S.mouse.y)
     // blocked if unaffordable OR overlapping an existing building/node
     const ok = S.resource >= COST[S.tool] && canPlace(S.tool, p.x, p.y)
-    if (ok) drawRanges(S.tool, p.x, p.y, 0.4)
+    if (ok) drawRanges(S.tool, p.x, p.y, 0.4, .75) // a fresh tower is a peashooter (PEA.rng = .75)
     else groundRing(p.x, p.y, LINK_RANGE, '#f44', 0.3, 1) // blocked: red hint
 
     // connection preview: lines to what this building would link with in range
@@ -639,9 +634,6 @@ export function render() {
     FX.globalCompositeOperation = 'source-over'
     X.drawImage(FC, 0, 0)
   }
-
-  if (false) drawMinimap()
-  if (false) drawThreat()
 
   // one full-screen black fill for both fades: the start-transition (trans 0→1 covers the
   // title, 1→2 reveals the game) and the page-load intro (hold black INTRO_HOLD, then fade out).

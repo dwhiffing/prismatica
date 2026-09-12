@@ -105,6 +105,7 @@ export interface Pulse {
   col: number // energy color bitmask (4=R,2=G,1=B; 0=uncolored)
   avoid?: Building // a building the next relays must not deliver to (pushes ejected energy away)
   avoidN?: number // hops of `avoid` remaining: decremented each relay, avoid drops at 0
+  hist?: Building[] // recent buildings this pulse passed through; colored energy avoids revisiting them
 }
 
 // --- render types ---
