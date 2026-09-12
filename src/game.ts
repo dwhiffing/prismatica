@@ -93,8 +93,6 @@ export const ekOf = (csz: number): EType => (['N3', 'N2', 'N'] as EType[])[csz -
 // thin out the further you get from spawn. Golden-angle rotation never self-overlaps, so
 // no patch-center dedup / min-gap bookkeeping is needed. World is a fixed LT.patchN patches.
 const GOLDEN = 2.399963 // radians (~137.5°)
-// outer extent of the generated field — used by the minimap to frame the world.
-export const worldRadius = () => LT.patchSpacing * (LT.patchN - 1) ** 0.7 + LT.patchSpread
 
 function spawnPatch(cx: number, cy: number) {
   const r = () => (rnd() - rnd()) * LT.patchSpread
@@ -121,7 +119,7 @@ function reset() {
   // colors interleave, keeping same-color crystals far apart. Radius grows with i, and SIZE grows
   // with distance: size 1 near spawn, 2 mid-field, 3 out at the rim. Each recolors up to `csz`
   // energy units, shrinking a step per use, then depletes away.
-  const wr = worldRadius()
+  const wr = LT.patchSpacing * (LT.patchN - 1) ** 0.7 + LT.patchSpread
   for (let i = 0; i < CRYSTALS; i++) {
     const rad = 160 + (wr - 160) * (i / CRYSTALS) ** 0.85, a = i * GOLDEN
     const csz = Math.min(3, 1 + (rad / wr * 3 | 0)) // 1 near spawn -> 3 at the rim
@@ -447,6 +445,7 @@ function loop(now: number) {
 declare const SKIPTITLE: boolean
 if (SKIPTITLE && DEV_FEATURES && DEV_SKIP_TITLE) { isMenu = false; LT.dayT = .35; reset(); drawUI() }
 else titleScreen()
+document.getElementById('ld')?.remove() // drop the "Loading…" cover now the game is initialized
 requestAnimationFrame(loop)
 // dev: expose reset() on window as regen() to re-run world generation from the console
 // (DEV is defined false in the release build, so this is stripped by minification)

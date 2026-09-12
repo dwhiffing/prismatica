@@ -89,7 +89,9 @@ export async function bundle({ minify = true } = {}) {
       const packer = new Packer([{ data: js, type: 'js', action: 'eval' }], {});
       await packer.optimize(1);
       const { firstLine, secondLine } = packer.makeDecoder();
-      js = firstLine + secondLine;
+      // Defer the Roadroller decode+eval by one frame so the browser paints once before the
+      // synchronous decompression blocks the main thread (avoids a blank-screen-on-load).
+      js = 'onload=_=>' + firstLine + secondLine;
     }
   }
   // Use a replacer FUNCTION, not a string: a string replacement interprets `$&`, `$'`, `$$`

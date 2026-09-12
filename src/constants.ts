@@ -46,7 +46,7 @@ export const ENEMIES = true // master switch: set false to disable enemy spawns
 // DEV ONLY master switch: set false to turn OFF every dev-mode feature in a dev build — the debug
 // keys, free/fog toggles, AND booting straight into the game — so the dev build behaves like release
 // (shows the title, no debug shortcuts). No effect on release, which never has these anyway.
-export const DEV_FEATURES = false
+export const DEV_FEATURES = true
 // DEV ONLY: set false to boot to the TITLE even in a dev build (overrides SKIPTITLE). No effect on
 // release, which always shows the title. Flip this instead of editing bundle.js.
 export const DEV_SKIP_TITLE = false
