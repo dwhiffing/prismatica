@@ -3,7 +3,7 @@ import { COST } from './constants'
 import { H, S } from './state'
 import type { BType } from './types'
 import { zzfx } from './zzfx'
-import { changeSpeedSound, deselectBuildingTypeSound, selectBuildingTypeSound } from './sounds'
+import { changeSpeedSound, deselectBuildingTypeSound, selectBuildingSound } from './sounds'
 
 const TOOLS: [BType, string][] = [
   ['S', 'Solar'],
@@ -40,7 +40,7 @@ H.onpointerdown = (e: PointerEvent) => {
   else if (k === 'd') {
     // toggle sell mode
     S.mode = S.mode === 'sell' ? 'select' : 'sell' 
-    zzfx(...(S.mode === 'select' ? deselectBuildingTypeSound : selectBuildingTypeSound))
+    zzfx(...(S.mode === 'select' ? deselectBuildingTypeSound : selectBuildingSound))
   } else if (S.mode === 'build' && S.tool === k) {
     S.mode = 'select' // toggle off
     zzfx(...deselectBuildingTypeSound) // deselect sound
@@ -48,7 +48,7 @@ H.onpointerdown = (e: PointerEvent) => {
     S.tool = k as BType
     S.mode = 'build'
     S.sel = null
-    zzfx(...selectBuildingTypeSound) // picked a build tool
+    zzfx(...selectBuildingSound) // picked a build tool
   }
   drawUI()
 }

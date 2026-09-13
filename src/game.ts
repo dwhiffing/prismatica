@@ -14,7 +14,7 @@ import {
 import { canPlace, nearest, rnd, setSeed, unproject } from './core'
 import { computeSun } from './lighting'
 import { render } from './render'
-import { changeSpeedSound, deselectBuildingTypeSound, errorSound, placeBuildingSound, selectBuildingSound, selectBuildingTypeSound } from './sounds'
+import { changeSpeedSound, deselectBuildingTypeSound, errorSound, placeBuildingSound, selectBuildingSound } from './sounds'
 import { C, H, LT, resize, S, SPAWN, V } from './state'
 import { cycleSpec, devPulse, ejectSpec, releaseColors, relay, spawnEnemy, startWave, stepSim } from './sim'
 import { drawUI } from './ui'
@@ -372,7 +372,7 @@ addEventListener('keydown', (e: KeyboardEvent) => {
     S.tool = 'SLMT'[ti] as BType
     S.mode = 'build'
     S.sel = null // deselect any building when starting a build
-    zzfx(...selectBuildingTypeSound) // picked a build tool
+    zzfx(...selectBuildingSound) // picked a build tool
     drawUI()
     return
   }
@@ -387,7 +387,7 @@ addEventListener('keydown', (e: KeyboardEvent) => {
     if (S.sel && S.sel.crystalCol == null) { sellBuilding(S.sel); S.sel = null }
     else {
       S.mode = S.mode === 'sell' ? 'select' : 'sell'
-      zzfx(...(S.mode === 'select' ? deselectBuildingTypeSound : selectBuildingTypeSound))
+      zzfx(...(S.mode === 'select' ? deselectBuildingTypeSound : selectBuildingSound))
       S.sel = null
     }
     drawUI()

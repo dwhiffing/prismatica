@@ -7,7 +7,6 @@ export const mineSound = [.4,0,0,,.4,1,2,.5,,-30,,,,,,1,,.3,,,-3e3]
 
 export const changeSpeedSound = (freq = 0) => [,0,freq,,.1,.2,1,4,,3,,,,.6,,,,.4]
 export const errorSound = [,.1,200,.02,.03,.03,1,.2,,,,,,,18,,.1,.72,.03]
-export const selectBuildingTypeSound = [1,,612,.01,.01,.008,3,2.6,12,9,310,.02,,,302,,.12,.55,.02,,-906]
 export const deselectBuildingTypeSound = [2,,50,,.01,.04,,3.3,,,,,,.9,,,,.82,.03]
 export const selectBuildingSound = [1,.1,170,,.01,.04,,3,2,,,,,.1,,.2,,.5]
 
