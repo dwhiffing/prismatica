@@ -29,6 +29,9 @@ import { intro, INTRO_HOLD, isMenu, trans } from './game'
 import type { Enemy, Face, V3 } from './types'
 
 // upgrade-orb color by color-index 0..6: green, red, blue, yellow, cyan, magenta, white.
+// crystal tint from its color bitmask (R=4,G=2,B=1): 'f' for a set channel, '6' for unset — so
+// primaries AND secondaries (yellow/cyan/magenta) all render in their true color.
+const cryCol = (c: number) => '#' + (c & 4 ? 'f' : '6') + (c & 2 ? 'f' : '6') + (c & 1 ? 'f' : '6')
 // PIPCOL = hex (pips + body tint); PIPRGB = "r,g,b" (for glow, which wants an rgb string).
 const PIPCOL = ['#4f6', '#f44', '#48f', '#ee4', '#4ff', '#f4f', '#fff']
 const PIPRGB = ['68,255,102', '255,68,68', '68,136,255', '238,238,68', '68,255,255', '255,68,255', '255,255,255']
@@ -330,7 +333,7 @@ export function render() {
       if (b.bp == null && onScreen(b)) {
         if (b.crystalCol != null) { // color crystal: a circle in its color
           const [sx, sy] = iso(b.x, 0, b.y)
-          X.fillStyle = b.crystalCol === 4 ? '#f66' : b.crystalCol === 2 ? '#6f6' : '#66f'
+          X.fillStyle = cryCol(b.crystalCol)
           X.beginPath(); X.arc(sx, sy, 3, 0, 7); X.fill()
         } else if (b.t === 'T') { // tower: a circle filled in the WEAPON color (peashooter = smaller
           // orange-yellow), ringed in the BONUS color when it has one.
@@ -385,7 +388,7 @@ export function render() {
         entityFaces(ENTITIES[b.ek ?? b.t], b.x, b.y, 1, faces,
           // overloaded link flashes red; a link is tinted yellow. A TOWER is always GREY at its base
           // (spline 0); its head (spline 1) is tinted by the WEAPON color, darkened when unpowered.
-          b.crystalCol != null ? (b.crystalCol === 4 ? '#f66' : b.crystalCol === 2 ? '#6f6' : '#66f')
+          b.crystalCol != null ? cryCol(b.crystalCol)
             : b.load! > LINK_MAX ? '#f33'
             : b.t === 'L' ? '#ee4'
             : b.t === 'T' ? ['#888', mixHex(b.weapon != null ? PIPCOL[b.weapon] : '#ffc88c', '#000', canFireE(b) ? 1 : .35)] : undefined,

@@ -14,7 +14,7 @@ import {
 import { canPlace, nearest, rnd, setSeed, unproject } from './core'
 import { computeSun } from './lighting'
 import { render } from './render'
-import { deselectBuildingSound, deselectBuildingTypeSound, errorSound, placeBuildingSound, selectBuildingSound, selectBuildingTypeSound, sellBuildingSound } from './sounds'
+import { changeSpeedSound, deselectBuildingTypeSound, errorSound, placeBuildingSound, selectBuildingSound, selectBuildingTypeSound } from './sounds'
 import { C, H, LT, resize, S, SPAWN, V } from './state'
 import { cycleSpec, devPulse, ejectSpec, releaseColors, relay, spawnEnemy, startWave, stepSim } from './sim'
 import { drawUI } from './ui'
@@ -125,8 +125,11 @@ function reset() {
   for (let i = 0; i < CRYSTALS; i++) {
     const rad = 160 + (wr - 160) * (i / CRYSTALS) ** 0.85, a = i * GOLDEN
     const csz = Math.min(3, 1 + ((rad / wr) ** .45 * 3 | 0)) // 1 near spawn -> 3 at the rim; **.45 curve reaches big sizes MUCH closer to spawn
+    // every ~8th crystal is a SECONDARY color (yellow 6 / cyan 3 / magenta 5) — but only past the
+    // inner ring (i>120), so near-spawn crystals stay primary. The rest cycle primaries (R 4/G 2/B 1).
+    const crystalCol = i > 30 && i % 7 === 0 ? [6, 3, 5][(i / 8 | 0) % 3] : [4, 2, 1][i % 3]
     S.buildings.push({ ...mkB('L', SPAWN.x + Math.cos(a) * rad, SPAWN.y + Math.sin(a) * rad),
-      crystalCol: [4, 2, 1][i % 3], csz, ek: ekOf(csz) })
+      crystalCol, csz, ek: ekOf(csz) })
   }
   // lay the sunflower: patch 0 at spawn, each next one rotated by GOLDEN and pushed out
   // by spacing·i^0.7 (rings spread with distance → clusters thin out further from spawn).
@@ -341,7 +344,7 @@ C.onpointerup = (e: PointerEvent) => {
       return
     }
     const hit = nearest(p, () => true)
-    zzfx(...(hit ? selectBuildingSound : deselectBuildingSound))
+    zzfx(...(hit ? selectBuildingSound : deselectBuildingTypeSound))
     S.sel = hit
   }
 }
@@ -395,7 +398,7 @@ addEventListener('keydown', (e: KeyboardEvent) => {
 // once — a one-tap cleanup of spent mining sites; any other building sells just itself.
 function sellBuilding(b: Building) {
   if (b.crystalCol != null) return
-  zzfx(...sellBuildingSound)
+  zzfx(...changeSpeedSound(100))
   const starved = (o: Building) => o.t === 'M' &&
     !S.nodes.some((n) => n.amt > 0 && (n.x - o.x) ** 2 + (n.y - o.y) ** 2 < MINE_RANGE ** 2)
   const doomed = starved(b) ? S.buildings.filter(starved) : [b]

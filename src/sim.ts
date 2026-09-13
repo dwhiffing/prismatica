@@ -100,7 +100,10 @@ const towerRoom = (o: Building) => o.t === 'T' && !building(o) && (o.cols?.lengt
 // goes to anything that WANTS a unit (excludes full miners/towers and finished solars). Colored
 // energy is never lost — it routes onward (relayed by links, recolored by crystals) to a tower.
 const accepts = (o: Building, col: number) =>
-  col ? o.t === 'L' || towerRoom(o) : o.t === 'L' || wants(o)
+  // COLORED energy only ever goes to a FINISHED link (to forward) or a tower with spec room —
+  // never an under-construction building, which would consume/lose it. UNCOLORED fuel can flow to
+  // an under-construction link (it forwards) or anything that wants a build/charge unit.
+  col ? (o.t === 'L' && !building(o)) || towerRoom(o) : o.t === 'L' || wants(o)
 // relay a unit onward FROM `node`, preserving its energy color. `avoid` (if given) is excluded
 // from every candidate — used so just-ejected energy at its first link never routes back to the
 // tower that released it.
@@ -526,7 +529,10 @@ export function stepSim(dt: number) {
         // consumes a whole charge (CHARGE) — and it fires as long as it has any energy.
         // `cd` is the phase timer: >=0 counts UP through the firing window; on reaching LASER_ON it
         // flips to a negative cooldown that counts back UP to 0.
-        const cd = b.cd || 0
+        // clamp cd into its only valid range [-LASER_OFF, LASER_ON]: a stale/out-of-band value
+        // (e.g. left over from a weapon swap, or a downtime that never counted back up) would
+        // otherwise keep `cooling` true forever and permanently stall the beam. This self-heals it.
+        const cd = Math.max(-LASER_OFF, Math.min(LASER_ON, b.cd || 0))
         const cooling = cd < 0
         const rng = TOWER_RANGE * wepRng(b) // green bonus extends range
         // LOCK targeting for the duration of a blast: mid-blast (cd>0) keep hitting the current
@@ -535,10 +541,9 @@ export function stepSim(dt: number) {
         // lost (target died / left range).
         const locked = cd > 0 && b.fx && b.fx.hp > 0 && S.enemies.includes(b.fx) && near(b, b.fx, rng)
           ? b.fx : null
-        // can fire this tick? not cooling, and has ANY energy. No separate start-gate: an earlier
-        // "must bank ~0.3s of drain to START" gate stranded energy whenever income was slower than
-        // that threshold, so a tower with power and a target in range would idle. The cooldown
-        // (LASER_OFF) already prevents 1-frame trickle blasts, so starting on any energy is safe.
+        // can fire this tick? not cooling, and has ANY energy. No separate start-gate (an old
+        // "bank 0.3s of drain to START" gate stranded energy and idled a powered tower). The
+        // cooldown (LASER_OFF) already prevents 1-frame trickle blasts.
         const canFire = !cooling && b.e > 0
         const en = canFire ? locked || pickEnemy(b, rng, w.tgt, true) : null // laser: prefer shielded
         if (en) {
@@ -567,6 +572,7 @@ export function stepSim(dt: number) {
           }
           if (cd + dt >= LASER_ON) b.cd = -LASER_OFF * fireRateMod(b) // firing window over -> cool
           else b.cd = cd + dt
+          b.fxt = 0 // fired this tick: reset the stall watchdog
         } else {
           b.beamA = Math.max(0, (b.beamA || 0) - dt * 4) // fade off (cooling, empty, or no target)
           b.chainT = undefined // no chain beams while not firing
@@ -588,7 +594,6 @@ export function stepSim(dt: number) {
         }
       }
     }
-    if (b.fxt && b.fxt > 0) b.fxt -= dt
   }
 
   // miners: fire the laser for MINE_ON seconds, then MINE_OFF recharge; 1 energy = 2 shots.
