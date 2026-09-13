@@ -222,8 +222,8 @@ const EKIND: [number, number, number, number][] = [
 // kind, starting from wave, base count, per wave increment
 // kinds: 0 normal, 1 shield, 2 shielder, 3 fast(swarm), 4 summoner, 5 boss.
 const WAVES: [number, number, number, number][] = [
-  [0, 1, 1, .5],   // normals — the staple, always present, grows steadily
-  [1, 20, 1, .3],  // shielded from wave 4
+  [0, 1, 1, 1],   // normals — the staple, always present, grows steadily
+  [1, 10, 1, .33],  // shielded from wave 4
   [3, 25, 1, .15],   // fast swarms from wave 2 (each spawns 4)
   [2, 30, 1, .2],   // shielders from wave 6
   [4, 35, 1, .2],  // summoners from wave 9
